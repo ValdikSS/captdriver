@@ -93,17 +93,17 @@ void capt_init_status(void)
 
 const struct capt_status_s *capt_get_status(void)
 {
-	download_status(CAPT_CHKSTATUS);
+	download_status(CAPT_GetBasicStatus);
 	return &status;
 }
 
 const struct capt_status_s *capt_get_xstatus_only(void)
 {
-	download_status(CAPT_CHKXSTATUS);
+	download_status(CAPT_GetExtendedStatus);
 	print_status();
 	/*
 	if (FLAG(&status, CAPT_FL_JOBSTAT_CHNG)) {
-	   capt_sendrecv(CAPT_CHKJOBSTAT, NULL, 0, NULL, 0);
+	   capt_sendrecv(CAPT_GetInputStatus, NULL, 0, NULL, 0);
 	   print_status();
 	}
 	*/
@@ -113,7 +113,7 @@ const struct capt_status_s *capt_get_xstatus_only(void)
 
 const struct capt_status_s *capt_get_xstatus(void)
 {
-	download_status(CAPT_CHKSTATUS);
+	download_status(CAPT_GetBasicStatus);
 	if (FLAG(&status, CAPT_FL_XSTATUS_CHNG))
 		capt_get_xstatus_only();
 	return &status;

@@ -34,7 +34,7 @@ struct capt_status_s {
 #define _FL(s, b) ((s << 16) | (1 << b))
 enum capt_flags
 {
-	/* status[0] */
+	/* status[0] bBasicStatus */
 	CAPT_FL_READY1       = _FL(0, 15), /* ? */
 	CAPT_FL_READY2       = _FL(0, 12), /* ? */
 	CAPT_FL_JOBSTAT_CHNG = _FL(0, 9),
@@ -43,7 +43,7 @@ enum capt_flags
 	CAPT_FL_UNINIT1      = _FL(0, 5),
 	CAPT_FL_UNINIT2      = _FL(0, 4),
 	CAPT_FL_BUFFERFULL   = _FL(0, 2),
-	CAPT_FL_NOPAPER1     = _FL(0, 1),
+	CAPT_FL_NOPAPER1     = _FL(0, 1), // RCF_NOTREADY
 	CAPT_FL_PROCESSING   = _FL(0, 0),
 	/* status[1] */
 	CAPT_FL_NOPAPER2     = _FL(1, 14),
