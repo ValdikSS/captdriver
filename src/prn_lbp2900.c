@@ -707,17 +707,13 @@ static void lbp2900_job_epilogue(struct printer_state_s *state)
 	uint8_t jbuf[2] = { LO(job), HI(job) };
 	unsigned total_pages = state->ipage;
 
-	while (1) {
-		const struct capt_status_s *status = lbp2900_get_status(state->ops);
-		if (status->page_completed == status->page_decoding) {
-			/* SetJobInfo2(flag=3): Linux job-end marker per protocol §2.7.
-			 * Windows uses flag=6 (CAPT_JOBFLAG_END); Linux must use flag=3 (CAPT_JOBFLAG_END_LIN). */
-			send_job_start(CAPT_JOBFLAG_END_LIN);
-			break;
-		}
-		usleep(100000);
-	}
-	/* Linux epilogue: GetExtendedStatus → ClearError → DiscardData → GetExtendedStatus
+	/* SetJobInfo2(flag=3): send immediately after last page's IC_BLACK_END.
+	 * Spec §9, §11, §14 Rule 14: do NOT wait for Printed==totalPages first.
+	 * GetExtendedStatus first to confirm final state, then send flag=3. */
+	capt_get_xstatus_only();
+	send_job_start(CAPT_JOBFLAG_END_LIN);
+
+	/* Linux epilogue: ClearError → DiscardData → GetExtendedStatus
 	 * → GoOffline(JobID) → ReleaseUnit (protocol §3.1.1 Linux order) */
 	capt_get_xstatus_only();
 	capt_sendrecv(CAPT_CLEAR_ERROR, NULL, 0, NULL, 0);
