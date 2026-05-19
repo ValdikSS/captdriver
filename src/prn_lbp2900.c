@@ -636,25 +636,9 @@ static bool lbp2900_page_epilogue(struct printer_state_s *state, const struct pa
 			} while (status->page_decoding != state->ipage);
 		}
 
-		/* SetJobInfo2(flag=2): send ONCE when Printed first becomes >= 1 (mid-job).
-		 * Protocol §2.7 §9.16: Windows driver sends this only once, not per-page. */
-		if (!state->sent_job_cont && status->page_completed >= 1) {
-			send_job_start(CAPT_JOBFLAG_CONT);
-			state->sent_job_cont = true;
-		}
-
 		/* Send StartPrint immediately — no CMD_BUSY wait needed. */
 		uint8_t buf[2] = { LO(state->ipage), HI(state->ipage) };
 		capt_sendrecv(CAPT_START_PRINT, buf, 2, NULL, 0);
-	} else {
-		/* Streaming mode: StartPrint was already sent in ops_send_band_hiscoa.
-		 * Read status once to check for SetJobInfo2(flag=2) trigger. */
-		status = lbp2900_get_status(state->ops);
-		/* SetJobInfo2(flag=2): send ONCE when Printed first becomes >= 1 (mid-job). */
-		if (!state->sent_job_cont && status->page_completed >= 1) {
-			send_job_start(CAPT_JOBFLAG_CONT);
-			state->sent_job_cont = true;
-		}
 	}
 
 	/* SetJobInfo2(flag=6) at job end is now sent once in lbp2900_job_epilogue,
@@ -662,6 +646,14 @@ static bool lbp2900_page_epilogue(struct printer_state_s *state, const struct pa
 
 	while (1) {
 		status = lbp2900_get_status(state->ops);
+
+		/* SetJobInfo2(flag=2): send ONCE at first inter-page idle when Printed >= 1.
+		 * Spec §5, §11, §14 Rule 13: fire after StartPrint, during between-pages wait. */
+		if (!state->sent_job_cont && status->page_completed >= 1) {
+			send_job_start(CAPT_JOBFLAG_CONT);
+			state->sent_job_cont = true;
+		}
+
 		/* Return as soon as the Printing counter reaches this page — the printer
 		 * has accepted the page into its engine and the next page's D0A9 multi-command
 		 * can be announced immediately (protocol §2.13, §2.18a, §4).
