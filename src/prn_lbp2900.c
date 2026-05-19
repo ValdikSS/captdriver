@@ -230,6 +230,16 @@ static void lbp3000_job_prologue(struct printer_state_s *state)
 	capt_init_status();
 	lbp2900_get_status(state->ops);
 
+	/* Wait for printer to settle at startup: loop GetExtendedStatus + GetInputStatus
+	 * until NEED_INPUT_STATUS (Bas1 & 0x02) clears (protocol §3.1 startup §9.1) */
+	for (int i = 0; i < 50; i++) {
+		status = lbp2900_get_status(state->ops);
+		if (!FLAG(status, CAPT_FL_NEED_INPUT_STATUS))
+			break;
+		capt_sendrecv(CAPT_GET_INPUT_STATUS, NULL, 0, NULL, 0);
+		usleep(200000);
+	}
+
 	capt_sendrecv(CAPT_START_0, NULL, 0, NULL, 0);
 	capt_sendrecv(CAPT_RESERVE_UNIT, magicbuf_0, ARRAY_SIZE(magicbuf_0), buf, &size);
 	job=WORD(buf[2], buf[3]);
