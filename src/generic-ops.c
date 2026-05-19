@@ -68,13 +68,20 @@ void ops_send_band_hiscoa(struct printer_state_s *state, const void *data, size_
 		 * BufLevel == 0 means the printer buffer is completely full. */
 		if (buflevel_slots == 0) {
 			if (size > 0 && !state->startprint_sent) {
-				/* Streaming mode: fire StartPrint(N) before buffer drains.
-				 * page number comes from the current page counter. */
+				/* Streaming mode: fire StartPrint(N) only after Start==N is confirmed.
+				 * Must wait until page_decoding >= ipage before sending StartPrint
+				 * (protocol §2.18a: Start counter must be incremented first). */
 				uint8_t spbuf[2] = { LO(state->ipage), HI(state->ipage) };
-				fprintf(stderr, "DEBUG: CAPT: streaming mode: BufLevel=0, sending StartPrint(%u)\n",
-					state->ipage);
-				capt_sendrecv(CAPT_START_PRINT, spbuf, 2, NULL, 0);
-				state->startprint_sent = true;
+				for (int w = 0; w < 500 && status->page_decoding < state->ipage; w++) {
+					status = capt_get_status();
+					usleep(50000);
+				}
+				if (status->page_decoding >= state->ipage) {
+					fprintf(stderr, "DEBUG: CAPT: streaming mode: BufLevel=0, sending StartPrint(%u)\n",
+						state->ipage);
+					capt_sendrecv(CAPT_START_PRINT, spbuf, 2, NULL, 0);
+					state->startprint_sent = true;
+				}
 			}
 			/* Poll until BufLevel rises to >= 1 */
 			do {
