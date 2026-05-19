@@ -37,7 +37,7 @@ static inline char bit(enum capt_flags flag)
 static void print_status(void)
 {
 	fprintf(stderr, "DEBUG: CAPT: printer status P1=%c P2=%c B=%c B0=%c B1=%c nE=%c\n",
-		bit(CAPT_FL_NOPAPER1), bit(CAPT_FL_NOPAPER2),
+		bit(CAPT_FL_NOTREADY), bit(CAPT_FL_NOPAPER2),
 		bit(CAPT_FL_BUTTON_ON),
 		bit(CAPT_FL_BUTTON), bit(CAPT_FL_BUTTON1),
 		bit(CAPT_FL_nERROR)
@@ -93,17 +93,17 @@ void capt_init_status(void)
 
 const struct capt_status_s *capt_get_status(void)
 {
-	download_status(CAPT_GetBasicStatus);
+	download_status(CAPT_GET_BASIC_STATUS);
 	return &status;
 }
 
 const struct capt_status_s *capt_get_xstatus_only(void)
 {
-	download_status(CAPT_GetExtendedStatus);
+	download_status(CAPT_GET_EXTENDED_STATUS);
 	print_status();
 	/*
-	if (FLAG(&status, CAPT_FL_JOBSTAT_CHNG)) {
-	   capt_sendrecv(CAPT_GetInputStatus, NULL, 0, NULL, 0);
+	if (FLAG(&status, CAPT_FL_NEED_INPUT_STATUS)) {
+	   capt_sendrecv(CAPT_GET_INPUT_STATUS, NULL, 0, NULL, 0);
 	   print_status();
 	}
 	*/
@@ -113,26 +113,26 @@ const struct capt_status_s *capt_get_xstatus_only(void)
 
 const struct capt_status_s *capt_get_xstatus(void)
 {
-	download_status(CAPT_GetBasicStatus);
-	if (FLAG(&status, CAPT_FL_XSTATUS_CHNG))
+	download_status(CAPT_GET_BASIC_STATUS);
+	if (FLAG(&status, CAPT_FL_XSTATUS_CHANGED))
 		capt_get_xstatus_only();
 	return &status;
 }
 
 void capt_wait_ready(void)
 {
-	while (FLAG(capt_get_status(), CAPT_FL_BUSY))
+	while (FLAG(capt_get_status(), CAPT_FL_CMD_BUSY))
 		sleep(1);
 }
 
 void capt_wait_xready(void)
 {
-	while (FLAG(capt_get_xstatus(), CAPT_FL_BUSY))
+	while (FLAG(capt_get_xstatus(), CAPT_FL_CMD_BUSY))
 		sleep(1);
 }
 
 void capt_wait_xready_only(void)
 {
-       while (FLAG(capt_get_xstatus_only(), CAPT_FL_BUSY))
+       while (FLAG(capt_get_xstatus_only(), CAPT_FL_CMD_BUSY))
                sleep(1);
 }

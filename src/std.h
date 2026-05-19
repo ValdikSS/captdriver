@@ -30,4 +30,8 @@
 #define container_of(ptr, type, member) \
 	((type *) ((char *) ptr - offsetof(type, member)))
 
-#define debug true
+#ifdef CAPT_DEBUG
+# define debug true
+#else
+# define debug false
+#endif

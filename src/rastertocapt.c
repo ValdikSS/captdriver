@@ -349,7 +349,7 @@ int main(int argc, char *argv[])
 	sigemptyset(&act_ign.sa_mask);
 	sigaction(SIGPIPE, &act_ign, NULL);
 	/* handle SIGTERM */
-	act_cancel.sa_handler = do_cancel();
+	act_cancel.sa_handler = do_cancel;
 	sigemptyset(&act_cancel.sa_mask);
 	sigaddset(&act_cancel.sa_mask, SIGINT);
 	sigaction(SIGTERM, &act_cancel, NULL);

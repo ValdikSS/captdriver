@@ -50,7 +50,7 @@ struct lbp2900_ops_s {
 };
 
 static const uint8_t magicbuf_0[] = {
-	0x00, 0x00, 0x1E, 0x00, 0x00, 0x00, 0x00, 0x00
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
 static const uint8_t magicbuf_2[] = {
@@ -118,7 +118,7 @@ static void send_job_start(uint8_t fg, uint16_t page)
 	};
 	memcpy(buf, head, sizeof(head));
 	memset(buf + 32, 0, 40 + ml + ul + nl);
-	capt_sendrecv(CAPT_SetJobInfo2, buf, sizeof(buf), NULL, 0);
+	capt_sendrecv(CAPT_SET_JOB_INFO2, buf, sizeof(buf), NULL, 0);
 }
 
 static void lbp2900_job_prologue(struct printer_state_s *state)
@@ -127,16 +127,16 @@ static void lbp2900_job_prologue(struct printer_state_s *state)
 	uint8_t buf[8];
 	size_t size;
 
-	capt_sendrecv(CAPT_GetPrinterInfo, NULL, 0, NULL, 0);
+	capt_sendrecv(CAPT_GET_PRINTER_INFO, NULL, 0, NULL, 0);
 	sleep(1);
 	capt_init_status();
 	lbp2900_get_status(state->ops);
 
 	capt_sendrecv(CAPT_START_0, NULL, 0, NULL, 0);
-	capt_sendrecv(CAPT_ReserveUnit, magicbuf_0, ARRAY_SIZE(magicbuf_0), buf, &size);
+	capt_sendrecv(CAPT_RESERVE_UNIT, magicbuf_0, ARRAY_SIZE(magicbuf_0), buf, &size);
 	job=WORD(buf[2], buf[3]);
 
-	capt_sendrecv(CAPT_SetLEDStatus, lbp3010_gpio_init, ARRAY_SIZE(lbp3010_gpio_init), NULL, 0);
+	capt_sendrecv(CAPT_SET_LED_STATUS, lbp3010_gpio_init, ARRAY_SIZE(lbp3010_gpio_init), NULL, 0);
 	lbp2900_wait_ready(state->ops);
 
 	send_job_start(1, 0);
@@ -149,13 +149,13 @@ static void lbp3000_job_prologue(struct printer_state_s *state)
 	uint8_t buf[8];
 	size_t size;
 
-	capt_sendrecv(CAPT_GetPrinterInfo, NULL, 0, NULL, 0);
+	capt_sendrecv(CAPT_GET_PRINTER_INFO, NULL, 0, NULL, 0);
 	sleep(1);
 	capt_init_status();
 	lbp2900_get_status(state->ops);
 
 	capt_sendrecv(CAPT_START_0, NULL, 0, NULL, 0);
-	capt_sendrecv(CAPT_ReserveUnit, magicbuf_0, ARRAY_SIZE(magicbuf_0), buf, &size);
+	capt_sendrecv(CAPT_RESERVE_UNIT, magicbuf_0, ARRAY_SIZE(magicbuf_0), buf, &size);
 	job=WORD(buf[2], buf[3]);
 
 	/* LBP-3000 prints the very first printjob perfectly
@@ -166,7 +166,7 @@ static void lbp3000_job_prologue(struct printer_state_s *state)
 
 	/* There's also that command, that apparently does something, and does something,
 	 * but it's there in the Wireshark logs. Response data == command data. */
-	capt_sendrecv(CAPT_GoOffline, lbp3000_job_init, ARRAY_SIZE(lbp3000_job_init), NULL, 0);
+	capt_sendrecv(CAPT_GO_OFFLINE, lbp3000_job_init, ARRAY_SIZE(lbp3000_job_init), NULL, 0);
 
 	lbp2900_wait_ready(state->ops);
 }
@@ -177,16 +177,16 @@ static void lbp3010_job_prologue(struct printer_state_s *state)
 	uint8_t buf[8];
 	size_t size;
 
-	capt_sendrecv(CAPT_GetPrinterInfo, NULL, 0, NULL, 0);
+	capt_sendrecv(CAPT_GET_PRINTER_INFO, NULL, 0, NULL, 0);
 	sleep(1);
 	capt_init_status();
 	lbp2900_get_status(state->ops);
 
 	capt_sendrecv(CAPT_START_0, NULL, 0, NULL, 0);
-	capt_sendrecv(CAPT_ReserveUnit, magicbuf_0, ARRAY_SIZE(magicbuf_0), buf, &size);
+	capt_sendrecv(CAPT_RESERVE_UNIT, magicbuf_0, ARRAY_SIZE(magicbuf_0), buf, &size);
 	job=WORD(buf[2], buf[3]);
 
-	capt_sendrecv(CAPT_SetLEDStatus, lbp3010_gpio_init, ARRAY_SIZE(lbp3010_gpio_init), NULL, 0);
+	capt_sendrecv(CAPT_SET_LED_STATUS, lbp3010_gpio_init, ARRAY_SIZE(lbp3010_gpio_init), NULL, 0);
 	lbp2900_wait_ready(state->ops);
 
 	send_job_start(1, 0);
@@ -199,16 +199,16 @@ static void lbp6000_job_prologue(struct printer_state_s *state)
 	uint8_t buf[8];
 	size_t size;
 
-	capt_sendrecv(CAPT_GetPrinterInfo, NULL, 0, NULL, 0);
+	capt_sendrecv(CAPT_GET_PRINTER_INFO, NULL, 0, NULL, 0);
 	sleep(1);
 	capt_init_status();
 	lbp2900_get_status(state->ops);
 
 	capt_sendrecv(CAPT_START_0, NULL, 0, NULL, 0);
-	capt_sendrecv(CAPT_ReserveUnit, magicbuf_0, ARRAY_SIZE(magicbuf_0), buf, &size);
+	capt_sendrecv(CAPT_RESERVE_UNIT, magicbuf_0, ARRAY_SIZE(magicbuf_0), buf, &size);
 	job=WORD(buf[2], buf[3]);
 
-	capt_sendrecv(CAPT_SetLEDStatus, lbp3010_gpio_init, ARRAY_SIZE(lbp3010_gpio_init), NULL, 0);
+	capt_sendrecv(CAPT_SET_LED_STATUS, lbp3010_gpio_init, ARRAY_SIZE(lbp3010_gpio_init), NULL, 0);
 	lbp2900_wait_ready(state->ops);
 
 	capt_sendrecv(CAPT_LBP6000_SETUP_0, lbp6000_job_init, ARRAY_SIZE(lbp6000_job_init), NULL, 0);
@@ -299,24 +299,24 @@ static bool lbp2900_page_prologue(struct printer_state_s *state, const struct pa
 	(void) state;
 
 	status = lbp2900_get_status(state->ops);
-	if (FLAG(status, CAPT_FL_UNINIT1) || FLAG(status, CAPT_FL_UNINIT2)) {
-		capt_sendrecv(CAPT_ClearMisPrint, NULL, 0, NULL, 0);
-		capt_sendrecv(CAPT_ClearError, NULL, 0, NULL, 0);
-		capt_sendrecv(CAPT_DiscardData, NULL, 0, NULL, 0);
+	if (FLAG(status, CAPT_FL_UNINIT1) || FLAG(status, CAPT_FL_OFFLINE)) {
+		capt_sendrecv(CAPT_CLEAR_MIS_PRINT, NULL, 0, NULL, 0);
+		capt_sendrecv(CAPT_CLEAR_ERROR, NULL, 0, NULL, 0);
+		capt_sendrecv(CAPT_DISCARD_DATA, NULL, 0, NULL, 0);
 		//lbp2900_get_status(state->ops);
 		lbp2900_wait_ready(state->ops);
 
-		capt_sendrecv(CAPT_GoOnline, magicbuf_2, ARRAY_SIZE(magicbuf_2), NULL, 0);
+		capt_sendrecv(CAPT_GO_ONLINE, magicbuf_2, ARRAY_SIZE(magicbuf_2), NULL, 0);
 		lbp2900_wait_ready(state->ops);
 	}
 
 	while (1) {
-		if (! FLAG(lbp2900_get_status(state->ops), CAPT_FL_BUFFERFULL))
+		if (! FLAG(lbp2900_get_status(state->ops), CAPT_FL_CMD_BUSY))
 			break;
 		sleep(1);
 	}
 
-	capt_multi_begin(CAPT_SET_PARMS);
+	capt_multi_begin(CAPT_MULTI_COMMAND);
 	capt_multi_add(CAPT_IC_BEGIN_PAGE, pageparms, sizeof(pageparms));
 	s = hiscoa_format_params(buf, sizeof(buf), &hiscoa_default_params);
 	capt_multi_add(CAPT_IC_BLACK_PLANE, buf, s);
@@ -345,7 +345,7 @@ static bool lbp2900_page_epilogue(struct printer_state_s *state, const struct pa
 	lbp2900_wait_ready(state->ops);
 
 	uint8_t buf[2] = { LO(status->page_decoding), HI(status->page_decoding) };
-	capt_sendrecv(CAPT_StartPrint, buf, 2, NULL, 0);
+	capt_sendrecv(CAPT_START_PRINT, buf, 2, NULL, 0);
 	lbp2900_wait_ready(state->ops);
 
 	send_job_start(6, status->page_decoding);
@@ -355,7 +355,7 @@ static bool lbp2900_page_epilogue(struct printer_state_s *state, const struct pa
 		/* Interesting. Using page_printing here results in shifted print */
 		if (status->page_out == status->page_decoding)
 			return true;
-		if (FLAG(status, CAPT_FL_NOPAPER2) || FLAG(status, CAPT_FL_NOPAPER1)) {
+		if (FLAG(status, CAPT_FL_NOPAPER2) || FLAG(status, CAPT_FL_NOTREADY)) {
 			fprintf(stderr, "DEBUG: CAPT: no paper\n");
 			if (FLAG(status, CAPT_FL_PRINTING) || FLAG(status, CAPT_FL_PROCESSING1))
 				continue;
@@ -377,7 +377,7 @@ static void lbp2900_job_epilogue(struct printer_state_s *state)
 		}
 		sleep(1);
 	}
-	capt_sendrecv(CAPT_ReleaseUnit, jbuf, 2, NULL, 0);
+	capt_sendrecv(CAPT_RELEASE_UNIT, jbuf, 2, NULL, 0);
 }
 
 static void lbp2900_page_setup(struct printer_state_s *state,
@@ -401,28 +401,27 @@ static void lbp2900_cancel_cleanup(struct printer_state_s *state)
 	const struct capt_status_s *status = lbp2900_get_status(state->ops);
 	uint8_t jbuf[2] = { LO(job), HI(job) };
 
-	capt_sendrecv(CAPT_SetLEDStatus, lbp2900_gpio_init, ARRAY_SIZE(lbp2900_gpio_init), NULL, 0);
+	capt_sendrecv(CAPT_SET_LED_STATUS, lbp2900_gpio_init, ARRAY_SIZE(lbp2900_gpio_init), NULL, 0);
 	send_job_start(4, status->page_completed);
-	capt_sendrecv(CAPT_ReleaseUnit, jbuf, 2, NULL, 0);
+	capt_sendrecv(CAPT_RELEASE_UNIT, jbuf, 2, NULL, 0);
 }
 
 static void lbp3010_cancel_cleanup(struct printer_state_s *state)
 {
 	(void) state;
-	(void) state;
 	const struct capt_status_s *status = lbp2900_get_status(state->ops);
 	uint8_t jbuf[2] = { LO(job), HI(job) };
 
-	capt_sendrecv(CAPT_SetLEDStatus, lbp3010_gpio_init, ARRAY_SIZE(lbp3010_gpio_init), NULL, 0);
+	capt_sendrecv(CAPT_SET_LED_STATUS, lbp3010_gpio_init, ARRAY_SIZE(lbp3010_gpio_init), NULL, 0);
 	send_job_start(4, status->page_completed);
-	capt_sendrecv(CAPT_ReleaseUnit, jbuf, 2, NULL, 0);
+	capt_sendrecv(CAPT_RELEASE_UNIT, jbuf, 2, NULL, 0);
 }
 
 static void lbp2900_wait_user(struct printer_state_s *state)
 {
 	(void) state;
 
-	capt_sendrecv(CAPT_SetLEDStatus, lbp2900_gpio_blink, ARRAY_SIZE(lbp2900_gpio_blink), NULL, 0);
+	capt_sendrecv(CAPT_SET_LED_STATUS, lbp2900_gpio_blink, ARRAY_SIZE(lbp2900_gpio_blink), NULL, 0);
 	lbp2900_wait_ready(state->ops);
 
 	while (1) {
@@ -437,7 +436,7 @@ static void lbp2900_wait_user(struct printer_state_s *state)
 		sleep(1);
 	}
 
-	capt_sendrecv(CAPT_SetLEDStatus, lbp2900_gpio_init, ARRAY_SIZE(lbp2900_gpio_init), NULL, 0);
+	capt_sendrecv(CAPT_SET_LED_STATUS, lbp2900_gpio_init, ARRAY_SIZE(lbp2900_gpio_init), NULL, 0);
 	lbp2900_wait_ready(state->ops);
 }
 
@@ -445,7 +444,7 @@ static void lbp3010_wait_user(struct printer_state_s *state)
 {
 	(void) state;
 
-	capt_sendrecv(CAPT_SetLEDStatus, lbp3010_gpio_blink, ARRAY_SIZE(lbp3010_gpio_blink), NULL, 0);
+	capt_sendrecv(CAPT_SET_LED_STATUS, lbp3010_gpio_blink, ARRAY_SIZE(lbp3010_gpio_blink), NULL, 0);
 	lbp2900_wait_ready(state->ops);
 
 	while (1) {
@@ -460,7 +459,7 @@ static void lbp3010_wait_user(struct printer_state_s *state)
 		sleep(1);
 	}
 
-	capt_sendrecv(CAPT_SetLEDStatus, lbp3010_gpio_init, ARRAY_SIZE(lbp3010_gpio_init), NULL, 0);
+	capt_sendrecv(CAPT_SET_LED_STATUS, lbp3010_gpio_init, ARRAY_SIZE(lbp3010_gpio_init), NULL, 0);
 	lbp2900_wait_ready(state->ops);
 }
 
