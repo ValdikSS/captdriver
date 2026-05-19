@@ -20,6 +20,7 @@
 #include "generic-ops.h"
 
 #include "std.h"
+#include "word.h"
 #include "hiscoa-common.h"
 #include "hiscoa-compress.h"
 #include "capt-command.h"
