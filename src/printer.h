@@ -36,6 +36,7 @@ struct printer_state_s {
 	unsigned ipage;
 	unsigned iband;
 	unsigned isend;
+	bool sent_job_cont;    /* SetJobInfo2(flag=2) has been sent once */
 };
 
 struct printer_ops_s {

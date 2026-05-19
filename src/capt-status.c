@@ -113,14 +113,23 @@ const struct capt_status_s *capt_get_xstatus_only(void)
 
 const struct capt_status_s *capt_get_xstatus(void)
 {
+	/* Fix 8: GetBasicStatus first, then check byte-2 flags (protocol §2.4):
+	 *   CAPT_FL2_XSTATUS_CHANGED (0x01) → call GetExtendedStatus
+	 *   CAPT_FL2_NEED_INPUT_STATUS (0x02) → call GetInputStatus */
 	download_status(CAPT_GET_BASIC_STATUS);
 	if (FLAG(&status, CAPT_FL_XSTATUS_CHANGED))
 		capt_get_xstatus_only();
+	if (FLAG(&status, CAPT_FL_NEED_INPUT_STATUS))
+		capt_sendrecv(CAPT_GET_INPUT_STATUS, NULL, 0, NULL, 0);
 	return &status;
 }
 
 void capt_wait_ready(void)
 {
+	/* Fix 7: Poll GetBasicStatus; wait until CMD_BUSY (0x04) clears.
+	 * CAPT_FL_CMD_BUSY = _FL(0,2) = 0x04 = CMD_BUSY per protocol §2.4.
+	 * Before Phase 1 this was CAPT_FL_BUSY which mapped to ERROR_BIT (0x80)
+	 * and was therefore waiting for errors to clear, not command completion. */
 	while (FLAG(capt_get_status(), CAPT_FL_CMD_BUSY))
 		sleep(1);
 }

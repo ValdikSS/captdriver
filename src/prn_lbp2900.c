@@ -145,9 +145,11 @@ static void lbp2900_job_prologue(struct printer_state_s *state)
 
 static void lbp3000_job_prologue(struct printer_state_s *state)
 {
-	(void) state;
 	uint8_t buf[8];
 	size_t size;
+	const struct capt_status_s *status;
+
+	state->sent_job_cont = false;
 
 	capt_sendrecv(CAPT_GET_PRINTER_INFO, NULL, 0, NULL, 0);
 	sleep(1);
@@ -158,15 +160,23 @@ static void lbp3000_job_prologue(struct printer_state_s *state)
 	capt_sendrecv(CAPT_RESERVE_UNIT, magicbuf_0, ARRAY_SIZE(magicbuf_0), buf, &size);
 	job=WORD(buf[2], buf[3]);
 
-	/* LBP-3000 prints the very first printjob perfectly
-	 * and then proceeds to hang at this (commented out)
-	 * spot. That's the difference, or so it seems. */
-/*	lbp2900_wait_ready(state->ops);	*/
-	send_job_start(1, 0);
+	send_job_start(CAPT_JOBFLAG_START, 0);
 
-	/* There's also that command, that apparently does something, and does something,
-	 * but it's there in the Wireshark logs. Response data == command data. */
-	capt_sendrecv(CAPT_GO_OFFLINE, lbp3000_job_init, ARRAY_SIZE(lbp3000_job_init), NULL, 0);
+	/* Only go offline if printer is currently online (protocol §3.1 §9.4).
+	 * Read GetBasicStatus and check the OFFLINE bit; skip GoOffline if
+	 * the printer is already offline and go directly to the clear sequence. */
+	status = lbp2900_get_status(state->ops);
+	if (!(FLAG(status, CAPT_FL_OFFLINE))) {
+		capt_sendrecv(CAPT_GO_OFFLINE, lbp3000_job_init, ARRAY_SIZE(lbp3000_job_init), NULL, 0);
+	}
+
+	/* Windows canonical clear order: ClearMisPrint → ClearError → DiscardData → GoOnline
+	 * (protocol §3.1.1 Windows order, §9 note 18) */
+	capt_sendrecv(CAPT_CLEAR_MIS_PRINT, NULL, 0, NULL, 0);
+	capt_sendrecv(CAPT_CLEAR_ERROR, NULL, 0, NULL, 0);
+	capt_sendrecv(CAPT_DISCARD_DATA, NULL, 0, NULL, 0);
+	/* GoOnline: 16-byte Windows payload with ee db ea ad magic (protocol §2.12) */
+	capt_sendrecv(CAPT_GO_ONLINE, magicbuf_2, ARRAY_SIZE(magicbuf_2), NULL, 0);
 
 	lbp2900_wait_ready(state->ops);
 }
@@ -224,42 +234,58 @@ static bool lbp2900_page_prologue(struct printer_state_s *state, const struct pa
 	size_t s;
 	uint8_t buf[16];
 
-	uint8_t sz = 0x00; /* page size */
-	uint8_t save = dims->toner_save;
-	uint8_t ink_k = (dims->ink_k<<2);
-	uint8_t fm = 0x00; /* fuser mode (temperature?) */
-	uint8_t air = 0x02; /* automatic image refinement */
+	uint8_t sz = 0x00; /* paper size byte from tPaperSizeTbl */
+	uint8_t save = dims->toner_save; /* TonerSave */
+	uint8_t fm = 0x00; /* MediaType (fuser/media mode) */
+
+	/* TonerDensity: all 4 bytes equal per protocol §2.14.
+	 * Default 0x1f (density=7 in bits 5-2). If ink_k is set, shift it.
+	 * Fix: was ink_k, 0x1C, 0x1C, 0x1C (non-uniform); now all 4 bytes equal. */
+	uint8_t td = (dims->ink_k > 0) ? (uint8_t)(dims->ink_k << 2) : 0x1f;
+
+	/* PaperType: special_mode_for_papertype() result per protocol §2.14.
+	 * Fix: was raw dims->media_type (wrong enum values); now converted correctly.
+	 * 0x00=Plain/Thick, 0x20=Envelope, 0x24=Transparency */
+	uint8_t paper_type = 0x00;
 
 	switch (dims->media_type) {
 		case 0x00:
 		case 0x02:
 			/* Plain Paper & Plain Paper L */
 			fm = 0x01;
+			paper_type = 0x00;
 			break;
 		case 0x01:
 			/* Thick Paper */
 			fm = 0x01;
+			paper_type = 0x00;
 			break;
 		case 0x03:
 			/* Thick Paper H */
 			fm = 0x02;
+			paper_type = 0x00;
 			break;
 		case 0x04:
 			/* Transparency */
 			fm = 0x13;
+			paper_type = 0x24;
 			break;
 		case 0x05:
 			/* Transparency */
 			fm = 0x14;
+			paper_type = 0x24;
 			break;
 		case 0x06:
 			/* Envelope */
 			fm = 0x1C;
+			paper_type = 0x20;
 			break;
 		default:
 			fm = 0x01;
+			paper_type = 0x00;
 	}
-	fprintf(stderr, "DEBUG: CAPT: media_type=%u, fm=%u\n", dims->media_type, fm);
+	fprintf(stderr, "DEBUG: CAPT: media_type=%u, fm=%u, paper_type=0x%02x\n",
+		dims->media_type, fm, paper_type);
 
 	if ( strncmp(dims->media_size, "A4", 2) == 0 ) sz = 0x02;
 	else if ( strncmp(dims->media_size, "A5", 2) == 0 ) sz = 0x03;
@@ -274,38 +300,65 @@ static bool lbp2900_page_prologue(struct printer_state_s *state, const struct pa
 	else if ( strncmp(dims->media_size, "3x5", 3) ==0 ) sz = 0x40;
 	else if ( strncmp(dims->media_size, "PRC16K", 6) ==0 ) sz = 0xD4;
 	else sz = 0x02;
-	fprintf(stderr, "DEBUG: CAPT: media_size=%s, fm=%u\n", dims->media_size, sz);
+	fprintf(stderr, "DEBUG: CAPT: media_size=%s, sz=0x%02x\n", dims->media_size, sz);
 
+	/* IC_BEGIN_PAGE (D0A0) 40-byte payload per protocol §2.14:
+	 * idx  0- 1: PageSeq (set to 0x0000 here; sequence filled per page)
+	 * idx  2- 3: ModelConst = 0x2a30 for LBP3000 (LE: 0x30, 0x2a)
+	 * idx  4   : PaperSzByte
+	 * idx  5   : Unk6 = 0x00 (Windows value)
+	 * idx  6   : PaperSrc = 0x00 (auto-feed)
+	 * idx  7   : 0x00
+	 * idx  8-11: TonerDensity — all 4 bytes equal (default 0x1f)
+	 * idx 12   : PaperType (special_mode_for_papertype: 0x00=Plain, 0x20=Env, 0x24=Trans)
+	 * idx 13   : ResFlag = 0x11 (600 dpi constant for LBP3000, NOT media_adapt)
+	 * idx 14   : Fixed_04 = 0x04 (CNTblModel=1)
+	 * idx 15   : Fixed_00 = 0x00
+	 * idx 16   : Fixed_01 = 0x01
+	 * idx 17   : Fixed_01b = 0x01
+	 * idx 18   : SuperSmooth = 0x02 (CNSuperSmooth for LBP3000)
+	 * idx 19   : TonerSave = 0x00 off by default
+	 * idx 20   : Unk21 = 0x00 (Windows value)
+	 * idx 21   : 0x00 for LBP3000
+	 * idx 22-23: MarginH uint16 LE
+	 * idx 24-25: MarginW uint16 LE
+	 * idx 26-27: LineSize uint16 LE
+	 * idx 28-29: ImgHeight uint16 LE
+	 * idx 30-31: PaperW uint16 LE
+	 * idx 32-33: PaperH uint16 LE
+	 * idx 34-35: FixFlags uint16 LE = 0x0000 for plain paper, no duplex
+	 * idx 36   : MediaType = 0x01 for Plain/Plain L
+	 * idx 37-39: 0x00 padding
+	 * Total: 40 bytes for LBP3000 (CNTblModel=1)
+	 */
 	uint8_t pageparms[] = {
-		/* Bytes 0-21 (0x00 to 0x15) */
+		/* idx  0- 7 */
 		0x00, 0x00, 0x30, 0x2A, sz, 0x00, 0x00, 0x00,
-		ink_k, 0x1C, 0x1C, 0x1C, dims->media_type, dims->media_adapt, 0x04, 0x00,
-		0x01, 0x01, air, save, 0x00, 0x00,
-		/* Bytes 22-33 (0x16 to 0x21) */
+		/* idx  8-15: TonerDensity (4 equal bytes), PaperType, ResFlag=0x11, Fixed_04, Fixed_00 */
+		td, td, td, td, paper_type, 0x11, 0x04, 0x00,
+		/* idx 16-23: Fixed_01, Fixed_01b, SuperSmooth=0x02, TonerSave, Unk21=0x00, 0x00, MarginH LE */
+		0x01, 0x01, 0x02, save, 0x00, 0x00,
 		LO(dims->margin_height), HI(dims->margin_height),
+		/* idx 24-31: MarginW LE, LineSize LE, ImgHeight LE */
 		LO(dims->margin_width), HI(dims->margin_width),
 		LO(dims->line_size), HI(dims->line_size),
 		LO(dims->num_lines), HI(dims->num_lines),
+		/* idx 32-39: PaperW LE, PaperH LE, FixFlags=0x0000, MediaType, padding */
 		LO(dims->paper_width), HI(dims->paper_width),
 		LO(dims->paper_height), HI(dims->paper_height),
-		/* Bytes 34-39 (0x22 to 0x27) */
 		0x00, 0x00, fm, 0x00, 0x00, 0x00,
-		/* Spare bytes for later
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		*/
 	};
-
-	(void) state;
 
 	status = lbp2900_get_status(state->ops);
 	if (FLAG(status, CAPT_FL_UNINIT1) || FLAG(status, CAPT_FL_OFFLINE)) {
+		/* Windows canonical clear order: ClearMisPrint → ClearError → DiscardData → GoOnline
+		 * (protocol §3.1.1 Windows order, §9 note 18) */
 		capt_sendrecv(CAPT_CLEAR_MIS_PRINT, NULL, 0, NULL, 0);
 		capt_sendrecv(CAPT_CLEAR_ERROR, NULL, 0, NULL, 0);
 		capt_sendrecv(CAPT_DISCARD_DATA, NULL, 0, NULL, 0);
-		//lbp2900_get_status(state->ops);
 		lbp2900_wait_ready(state->ops);
 
+		/* GoOnline: 16-byte Windows payload with ee db ea ad magic (protocol §2.12) */
 		capt_sendrecv(CAPT_GO_ONLINE, magicbuf_2, ARRAY_SIZE(magicbuf_2), NULL, 0);
 		lbp2900_wait_ready(state->ops);
 	}
@@ -341,14 +394,21 @@ static bool lbp2900_page_epilogue(struct printer_state_s *state, const struct pa
 	  if (status->page_received == status->page_decoding)
 	    break;
 	}
-	send_job_start(2, status->page_decoding);
+
+	/* SetJobInfo2(flag=2): send ONCE when Printed first becomes >= 1 (mid-job).
+	 * Protocol §2.7 §9.16: Windows driver sends this only once, not per-page. */
+	if (!state->sent_job_cont && status->page_completed >= 1) {
+		send_job_start(CAPT_JOBFLAG_CONT, status->page_decoding);
+		state->sent_job_cont = true;
+	}
 	lbp2900_wait_ready(state->ops);
 
 	uint8_t buf[2] = { LO(status->page_decoding), HI(status->page_decoding) };
 	capt_sendrecv(CAPT_START_PRINT, buf, 2, NULL, 0);
 	lbp2900_wait_ready(state->ops);
 
-	send_job_start(6, status->page_decoding);
+	/* SetJobInfo2(flag=6) at job end is now sent once in lbp2900_job_epilogue,
+	 * not per-page here, per protocol §2.7 §3.1.1. */
 
 	while (1) {
 		const struct capt_status_s *status = lbp2900_get_status(state->ops);
@@ -368,16 +428,32 @@ static bool lbp2900_page_epilogue(struct printer_state_s *state, const struct pa
 static void lbp2900_job_epilogue(struct printer_state_s *state)
 {
 	uint8_t jbuf[2] = { LO(job), HI(job) };
+	unsigned total_pages = state->ipage;
 
 	while (1) {
 		const struct capt_status_s *status = lbp2900_get_status(state->ops);
 		if (status->page_completed == status->page_decoding) {
-			send_job_start(4, status->page_completed);
+			/* SetJobInfo2(flag=6): Windows canonical job-end marker per protocol §2.7.
+			 * Was incorrectly flag=4 (abort); changed to CAPT_JOBFLAG_END=6. */
+			send_job_start(CAPT_JOBFLAG_END, status->page_completed);
 			break;
 		}
 		sleep(1);
 	}
 	capt_sendrecv(CAPT_RELEASE_UNIT, jbuf, 2, NULL, 0);
+
+	/* Post-job drain: alternate GetInputStatus + GetExtendedStatus until
+	 * Printed (page_completed) == totalPages, per protocol §3.1.1 §9.7.
+	 * This ensures the driver does not exit while the printer is still
+	 * physically ejecting the last page. */
+	while (1) {
+		const struct capt_status_s *s;
+		capt_sendrecv(CAPT_GET_INPUT_STATUS, NULL, 0, NULL, 0);
+		s = capt_get_xstatus_only();
+		if (s->page_completed >= total_pages)
+			break;
+		sleep(1);
+	}
 }
 
 static void lbp2900_page_setup(struct printer_state_s *state,
