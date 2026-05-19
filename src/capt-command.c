@@ -17,6 +17,9 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#define _XOPEN_SOURCE   600
+#define _POSIX_C_SOURCE 200112L
+
 #include "capt-command.h"
 
 #include "std.h"
@@ -24,6 +27,8 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+
+#include <unistd.h>
 
 #include <cups/cups.h>
 #include <cups/sidechannel.h>
@@ -115,7 +120,7 @@ const char *capt_identify(void)
 		fprintf(stderr, "DEBUG: CAPT: printer ID string %s\n", capt_iobuf);
 		if (capt_iosize)
 			return (const char*) capt_iobuf;
-		sleep(1);
+		usleep(50000);
 	}
 }
 

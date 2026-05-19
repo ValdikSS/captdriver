@@ -154,7 +154,7 @@ static void lbp2900_job_prologue(struct printer_state_s *state)
 	size_t size;
 
 	capt_get_printer_info(state);
-	sleep(1);
+	//sleep(1);
 	capt_init_status();
 	lbp2900_get_status(state->ops);
 
@@ -178,7 +178,7 @@ static void lbp3000_job_prologue(struct printer_state_s *state)
 	state->sent_job_cont = false;
 
 	capt_get_printer_info(state);
-	sleep(1);
+	//sleep(1);
 	capt_init_status();
 	lbp2900_get_status(state->ops);
 
@@ -213,7 +213,7 @@ static void lbp3010_job_prologue(struct printer_state_s *state)
 	size_t size;
 
 	capt_get_printer_info(state);
-	sleep(1);
+	//sleep(1);
 	capt_init_status();
 	lbp2900_get_status(state->ops);
 
@@ -396,7 +396,7 @@ static bool lbp2900_page_prologue(struct printer_state_s *state, const struct pa
 	while (1) {
 		if (! FLAG(lbp2900_get_status(state->ops), CAPT_FL_CMD_BUSY))
 			break;
-		sleep(1);
+		usleep(100000);
 	}
 
 	capt_multi_begin(CAPT_MULTI_COMMAND);
@@ -496,7 +496,7 @@ static void lbp3000_oop_recovery(struct printer_state_s *state)
 		/* CAPT_FL2_NEED_INPUT_STATUS (byte 2 bit 0x02) signals button press */
 		if (FLAG(status, CAPT_FL_NEED_INPUT_STATUS))
 			break;
-		sleep(1);
+		usleep(100000);
 	}
 
 	/* 19. NEED_INPUT_STATUS is set: paper inserted and button pressed. */
@@ -549,11 +549,15 @@ static bool lbp2900_page_epilogue(struct printer_state_s *state, const struct pa
 	capt_send(CAPT_IC_BLACK_END, NULL, 0);
 
 	if (!state->startprint_sent) {
-		/* Normal mode: waiting until the page descriptor is received, then StartPrint */
+		/* Normal mode: poll until the printer's decoder has accepted this page's
+		 * descriptor (Start == ipage), then send StartPrint immediately.
+		 * Do NOT call lbp2900_wait_ready() here — CMD_BUSY (0x04) is set
+		 * throughout physical printing of the previous page and will not clear
+		 * until it finishes, which defeats pipeline parallelism. */
 		while (1) {
-			sleep(1);
+			usleep(100000);
 			status = lbp2900_get_status(state->ops);
-			if (status->page_received == status->page_decoding)
+			if (status->page_decoding >= state->ipage)
 				break;
 		}
 
@@ -563,16 +567,13 @@ static bool lbp2900_page_epilogue(struct printer_state_s *state, const struct pa
 			send_job_start(CAPT_JOBFLAG_CONT, status->page_decoding);
 			state->sent_job_cont = true;
 		}
-		lbp2900_wait_ready(state->ops);
 
-		uint8_t buf[2] = { LO(status->page_decoding), HI(status->page_decoding) };
+		/* Send StartPrint immediately — no CMD_BUSY wait needed. */
+		uint8_t buf[2] = { LO(state->ipage), HI(state->ipage) };
 		capt_sendrecv(CAPT_START_PRINT, buf, 2, NULL, 0);
-		lbp2900_wait_ready(state->ops);
 	} else {
 		/* Streaming mode: StartPrint was already sent in ops_send_band_hiscoa.
-		 * Just wait for the printer to be ready. */
-		lbp2900_wait_ready(state->ops);
-
+		 * Read status once to check for SetJobInfo2(flag=2) trigger. */
 		status = lbp2900_get_status(state->ops);
 		/* SetJobInfo2(flag=2): send ONCE when Printed first becomes >= 1 (mid-job). */
 		if (!state->sent_job_cont && status->page_completed >= 1) {
@@ -586,8 +587,12 @@ static bool lbp2900_page_epilogue(struct printer_state_s *state, const struct pa
 
 	while (1) {
 		status = lbp2900_get_status(state->ops);
-		/* Interesting. Using page_printing here results in shifted print */
-		if (status->page_out == status->page_decoding)
+		/* Return as soon as the Printing counter reaches this page — the printer
+		 * has accepted the page into its engine and the next page's D0A9 multi-command
+		 * can be announced immediately (protocol §2.13, §2.18a, §4).
+		 * Waiting for page_out (Shipped) == page_decoding (Start) instead adds
+		 * unnecessary latency equal to the physical paper-delivery time per page. */
+		if (status->page_printing >= state->ipage)
 			return true;
 
 		/*
@@ -626,7 +631,7 @@ static bool lbp2900_page_epilogue(struct printer_state_s *state, const struct pa
 				continue;
 			return false;
 		}
-		sleep(1);
+		usleep(100000);
 	}
 }
 
@@ -643,7 +648,7 @@ static void lbp2900_job_epilogue(struct printer_state_s *state)
 			send_job_start(CAPT_JOBFLAG_END, status->page_completed);
 			break;
 		}
-		sleep(1);
+		usleep(100000);
 	}
 	capt_sendrecv(CAPT_RELEASE_UNIT, jbuf, 2, NULL, 0);
 
@@ -657,7 +662,7 @@ static void lbp2900_job_epilogue(struct printer_state_s *state)
 		s = capt_get_xstatus_only();
 		if (s->page_completed >= total_pages)
 			break;
-		sleep(1);
+		usleep(100000);
 	}
 }
 
@@ -714,7 +719,7 @@ static void lbp2900_wait_user(struct printer_state_s *state)
 			fprintf(stderr, "DEBUG: CAPT: button pressed\n");
 			break;
 		}
-		sleep(1);
+		usleep(100000);
 	}
 
 	capt_sendrecv(CAPT_SET_LED_STATUS, lbp2900_gpio_init, ARRAY_SIZE(lbp2900_gpio_init), NULL, 0);

@@ -139,17 +139,17 @@ void capt_wait_ready(void)
 	 * Before Phase 1 this was CAPT_FL_BUSY which mapped to ERROR_BIT (0x80)
 	 * and was therefore waiting for errors to clear, not command completion. */
 	while (FLAG(capt_get_status(), CAPT_FL_CMD_BUSY))
-		sleep(1);
+		usleep(100000);
 }
 
 void capt_wait_xready(void)
 {
 	while (FLAG(capt_get_xstatus(), CAPT_FL_CMD_BUSY))
-		sleep(1);
+		usleep(100000);
 }
 
 void capt_wait_xready_only(void)
 {
        while (FLAG(capt_get_xstatus_only(), CAPT_FL_CMD_BUSY))
-               sleep(1);
+               usleep(100000);
 }
