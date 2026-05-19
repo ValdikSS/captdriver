@@ -242,6 +242,13 @@ static void lbp3000_job_prologue(struct printer_state_s *state)
 	status = lbp2900_get_status(state->ops);
 	if (!(FLAG(status, CAPT_FL_OFFLINE))) {
 		capt_sendrecv(CAPT_GO_OFFLINE, lbp3000_job_init, ARRAY_SIZE(lbp3000_job_init), NULL, 0);
+		/* Poll GetBasicStatus until OFFLINE bit is set (protocol §3.1 §9.4) */
+		for (int i = 0; i < 50; i++) {
+			status = lbp2900_get_status(state->ops);
+			if (FLAG(status, CAPT_FL_OFFLINE))
+				break;
+			usleep(100000);
+		}
 	}
 
 	/* Linux canonical clear order: DiscardData → ClearMisPrint → ClearError → GoOnline
