@@ -29,6 +29,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <unistd.h>
 
 size_t ops_compress_band_hiscoa(struct printer_state_s *state,
 		void *band, size_t size,

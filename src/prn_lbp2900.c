@@ -196,19 +196,64 @@ static void send_job_start(uint8_t fg)
 	capt_sendrecv(CAPT_SET_JOB_INFO2, buf, sizeof(buf), NULL, 0);
 }
 
-static void lbp2900_job_prologue(struct printer_state_s *state)
+/*
+ * ReserveUnit with error recovery (all job prologues).
+ *
+ * ReserveUnit reply byte 0: if bit 0x80 is set the printer is in an error
+ * state (e.g. a stale job from a previous run).  Perform the canonical clear
+ * sequence (GoOffline → DiscardData → ClearMisPrint → ClearError → GoOnline)
+ * and retry once.  Returns the job ID extracted from buf[2:3].
+ */
+static uint16_t capt_reserve_unit(struct printer_state_s *state)
 {
 	uint8_t buf[8];
-	size_t size;
+	size_t size = sizeof(buf);
 
+	capt_sendrecv(CAPT_RESERVE_UNIT, magicbuf_0, ARRAY_SIZE(magicbuf_0), buf, &size);
+
+	if (size >= 1 && (buf[0] & 0x80)) {
+		fprintf(stderr, "DEBUG: CAPT: ReserveUnit error flag 0x%02x — clearing and retrying\n",
+			buf[0]);
+
+		/* Go offline first if not already offline */
+		const struct capt_status_s *status = lbp2900_get_status(state->ops);
+		if (!FLAG(status, CAPT_FL_OFFLINE)) {
+			capt_sendrecv(CAPT_GO_OFFLINE, lbp3000_job_init, ARRAY_SIZE(lbp3000_job_init), NULL, 0);
+			for (int i = 0; i < 50; i++) {
+				status = lbp2900_get_status(state->ops);
+				if (FLAG(status, CAPT_FL_OFFLINE))
+					break;
+				usleep(100000);
+			}
+		}
+		capt_sendrecv(CAPT_DISCARD_DATA, NULL, 0, NULL, 0);
+		capt_sendrecv(CAPT_CLEAR_MIS_PRINT, NULL, 0, NULL, 0);
+		capt_sendrecv(CAPT_CLEAR_ERROR, NULL, 0, NULL, 0);
+		capt_sendrecv(CAPT_GO_ONLINE, magicbuf_linux_online, ARRAY_SIZE(magicbuf_linux_online), NULL, 0);
+		lbp2900_wait_ready(state->ops);
+
+		/* Retry */
+		size = sizeof(buf);
+		capt_sendrecv(CAPT_RESERVE_UNIT, magicbuf_0, ARRAY_SIZE(magicbuf_0), buf, &size);
+		if (size >= 1 && (buf[0] & 0x80)) {
+			fprintf(stderr, "ERROR: CAPT: ReserveUnit failed (0x%02x) after error recovery — aborting\n",
+				buf[0]);
+			exit(1);
+		}
+	}
+
+	return (size >= 4) ? WORD(buf[2], buf[3]) : 0;
+}
+
+static void lbp2900_job_prologue(struct printer_state_s *state)
+{
 	capt_get_printer_info(state);
 	//sleep(1);
 	capt_init_status();
 	lbp2900_get_status(state->ops);
 
 	capt_sendrecv(CAPT_START_0, NULL, 0, NULL, 0);
-	capt_sendrecv(CAPT_RESERVE_UNIT, magicbuf_0, ARRAY_SIZE(magicbuf_0), buf, &size);
-	job=WORD(buf[2], buf[3]);
+	job = capt_reserve_unit(state);
 
 	capt_sendrecv(CAPT_SET_LED_STATUS, lbp3010_gpio_init, ARRAY_SIZE(lbp3010_gpio_init), NULL, 0);
 	lbp2900_wait_ready(state->ops);
@@ -219,11 +264,10 @@ static void lbp2900_job_prologue(struct printer_state_s *state)
 
 static void lbp3000_job_prologue(struct printer_state_s *state)
 {
-	uint8_t buf[8];
-	size_t size;
 	const struct capt_status_s *status;
 
 	state->sent_job_cont = false;
+	state->printer_page_offset = 0;
 
 	capt_get_printer_info(state);
 	//sleep(1);
@@ -240,8 +284,7 @@ static void lbp3000_job_prologue(struct printer_state_s *state)
 		usleep(200000);
 	}
 
-	capt_sendrecv(CAPT_RESERVE_UNIT, magicbuf_0, ARRAY_SIZE(magicbuf_0), buf, &size);
-	job=WORD(buf[2], buf[3]);
+	job = capt_reserve_unit(state);
 
 	send_job_start(CAPT_JOBFLAG_START);
 
@@ -279,17 +322,13 @@ static void lbp3000_job_prologue(struct printer_state_s *state)
 
 static void lbp3010_job_prologue(struct printer_state_s *state)
 {
-	uint8_t buf[8];
-	size_t size;
-
 	capt_get_printer_info(state);
 	//sleep(1);
 	capt_init_status();
 	lbp2900_get_status(state->ops);
 
 	capt_sendrecv(CAPT_START_0, NULL, 0, NULL, 0);
-	capt_sendrecv(CAPT_RESERVE_UNIT, magicbuf_0, ARRAY_SIZE(magicbuf_0), buf, &size);
-	job=WORD(buf[2], buf[3]);
+	job = capt_reserve_unit(state);
 
 	capt_sendrecv(CAPT_SET_LED_STATUS, lbp3010_gpio_init, ARRAY_SIZE(lbp3010_gpio_init), NULL, 0);
 	lbp2900_wait_ready(state->ops);
@@ -300,17 +339,13 @@ static void lbp3010_job_prologue(struct printer_state_s *state)
 
 static void lbp6000_job_prologue(struct printer_state_s *state)
 {
-	uint8_t buf[8];
-	size_t size;
-
 	capt_get_printer_info(state);
 	sleep(1);
 	capt_init_status();
 	lbp2900_get_status(state->ops);
 
 	capt_sendrecv(CAPT_START_0, NULL, 0, NULL, 0);
-	capt_sendrecv(CAPT_RESERVE_UNIT, magicbuf_0, ARRAY_SIZE(magicbuf_0), buf, &size);
-	job=WORD(buf[2], buf[3]);
+	job = capt_reserve_unit(state);
 
 	capt_sendrecv(CAPT_SET_LED_STATUS, lbp3010_gpio_init, ARRAY_SIZE(lbp3010_gpio_init), NULL, 0);
 	lbp2900_wait_ready(state->ops);
@@ -607,6 +642,15 @@ static bool lbp2900_page_epilogue(struct printer_state_s *state, const struct pa
 	const struct capt_status_s *status;
 
 	/*
+	 * Printer-relative page number: after an OOP recovery the printer's
+	 * internal counters (Start / Printing / Printed) are reset to 0 by
+	 * GoOnline.  printer_page_offset records how many host pages were
+	 * already processed before the reset, so pipage is always the value
+	 * the printer itself will report for the current page.
+	 */
+	unsigned pipage = state->ipage - state->printer_page_offset;
+
+	/*
 	 * IC_BLACK_END / StartPrint sequencing (protocol §2.18a):
 	 *
 	 * Normal mode (startprint_sent == false):
@@ -620,24 +664,24 @@ static bool lbp2900_page_epilogue(struct printer_state_s *state, const struct pa
 
 	if (!state->startprint_sent) {
 		/* Normal mode: poll until the printer's decoder has accepted this page's
-		 * descriptor (Start == ipage), then send StartPrint immediately.
+		 * descriptor (Start == pipage), then send StartPrint immediately.
 		 * Do NOT call lbp2900_wait_ready() here — CMD_BUSY (0x04) is set
 		 * throughout physical printing of the previous page and will not clear
 		 * until it finishes, which defeats pipeline parallelism.
 		 *
-		 * Fast-path: if Start==N was already confirmed during IC_VIDEO_DATA upload,
-		 * skip the poll loop entirely (spec §3.3, §14 Rule 10). */
+		 * Fast-path: if Start==pipage was already confirmed during IC_VIDEO_DATA
+		 * upload, skip the poll loop entirely (spec §3.3, §14 Rule 10). */
 		status = lbp2900_get_status(state->ops);
-		if (status->page_decoding != state->ipage) {
-			/* Start not yet confirmed — poll until Start==N exact match (spec §3.3) */
+		if (status->page_decoding != pipage) {
+			/* Start not yet confirmed — poll until Start==pipage exact match (spec §3.3) */
 			do {
 				usleep(100000);
 				status = lbp2900_get_status(state->ops);
-			} while (status->page_decoding != state->ipage);
+			} while (status->page_decoding != pipage);
 		}
 
 		/* Send StartPrint immediately — no CMD_BUSY wait needed. */
-		uint8_t buf[2] = { LO(state->ipage), HI(state->ipage) };
+		uint8_t buf[2] = { LO(pipage), HI(pipage) };
 		capt_sendrecv(CAPT_START_PRINT, buf, 2, NULL, 0);
 	}
 
@@ -659,7 +703,7 @@ static bool lbp2900_page_epilogue(struct printer_state_s *state, const struct pa
 		 * can be announced immediately (protocol §2.13, §2.18a, §4).
 		 * Waiting for page_out (Shipped) == page_decoding (Start) instead adds
 		 * unnecessary latency equal to the physical paper-delivery time per page. */
-		if (status->page_printing >= state->ipage)
+		if (status->page_printing >= pipage)
 			return true;
 
 		/*
@@ -682,13 +726,38 @@ static bool lbp2900_page_epilogue(struct printer_state_s *state, const struct pa
 				 * Page counters will reset to 0 after GoOnline in recovery.
 				 */
 				state->pages_printed_before_error = (int)status->page_completed;
-				lbp3000_oop_recovery(state);
-				/*
-				 * After recovery, page counters are reset.
-				 * Return false so the caller can reprint the affected page.
-				 */
-				return false;
+					lbp3000_oop_recovery(state);
+					/*
+					 * After recovery the printer's Start/Printing/Printed counters
+					 * have been reset to 0 by GoOnline.  Record the offset so that
+					 * pipage = ipage - printer_page_offset is correct for the reprint.
+					 * The page that triggered OOP was never physically printed, so the
+					 * offset is (ipage - 1): the next attempt at ipage maps to pipage=1.
+					 */
+					state->printer_page_offset = state->ipage - 1;
+					fprintf(stderr, "DEBUG: CAPT: printer_page_offset set to %u (ipage=%u)\n",
+						state->printer_page_offset, state->ipage);
+					/*
+					 * Return false so the caller can reprint the affected page.
+					 */
+					return false;
 			}
+		}
+
+		/*
+		 * Fatal hardware errors: paper jam (Eng bit 0x0100) or door open
+		 * (Eng bits 0x4000).  These conditions cannot be recovered by the
+		 * driver.  Release the reserved unit so the printer is not left
+		 * in a locked state, then abort.
+		 */
+		if (status->xstat_eng & (CAPT_ENG_JAM | CAPT_ENG_DOOR_OPEN)) {
+			const char *reason = (status->xstat_eng & CAPT_ENG_JAM)
+				? "paper jam" : "door open";
+			fprintf(stderr, "ERROR: CAPT: fatal printer error: %s (Eng=0x%04x) — aborting\n",
+				reason, status->xstat_eng);
+			uint8_t jbuf[2] = { LO(job), HI(job) };
+			capt_sendrecv(CAPT_RELEASE_UNIT, jbuf, 2, NULL, 0);
+			exit(1);
 		}
 
 		/* Legacy no-paper flags from extended status */
@@ -711,7 +780,27 @@ static void lbp2900_job_epilogue(struct printer_state_s *state)
 	 * Spec §9, §11, §14 Rule 14: do NOT wait for Printed==totalPages first.
 	 * GetExtendedStatus first to confirm final state, then send flag=3. */
 	capt_get_xstatus_only();
-	send_job_start(CAPT_JOBFLAG_END_LIN);
+	send_job_start(CAPT_JOBFLAG_END);
+
+	capt_sendrecv(CAPT_RELEASE_UNIT, jbuf, 2, NULL, 0);
+
+	/* Wait for RCF_PAPER_DELIVERY (Aux byte 9 bit 0x04) to clear before
+	 * issuing the teardown sequence.  The last sheet is still being
+	 * physically delivered while this bit is set; sending ClearError /
+	 * DiscardData / GoOffline / ReleaseUnit before it clears aborts the
+	 * delivery prematurely.  Poll GetExtendedStatus (with GetInputStatus
+	 * interleaved as the Windows driver does) until the bit is gone. */
+	{
+		const struct capt_status_s *s;
+		while (1) {
+			capt_sendrecv(CAPT_GET_INPUT_STATUS, NULL, 0, NULL, 0);
+			s = capt_get_xstatus_only();
+			if (!(s->aux & CAPT_AUX_PAPER_DELIVERY))
+				break;
+			usleep(100000);
+		}
+	}
+	return;
 
 	/* Linux epilogue: ClearError → DiscardData → GetExtendedStatus
 	 * → GoOffline(JobID) → ReleaseUnit (protocol §3.1.1 Linux order) */
@@ -721,19 +810,6 @@ static void lbp2900_job_epilogue(struct printer_state_s *state)
 	capt_get_xstatus_only();
 	capt_sendrecv(CAPT_GO_OFFLINE, jbuf, 2, NULL, 0);
 	capt_sendrecv(CAPT_RELEASE_UNIT, jbuf, 2, NULL, 0);
-
-	/* Post-job drain: alternate GetInputStatus + GetExtendedStatus until BOTH
-	 * Printed == totalPages AND Aux == 0x00 (RCF_SAFE_TIMER and RCF_PAPER_DELIVERY
-	 * both cleared). Spec §8, §14 Rule 15. */
-	while (1) {
-		const struct capt_status_s *s;
-		capt_sendrecv(CAPT_GET_INPUT_STATUS, NULL, 0, NULL, 0);
-		s = capt_get_xstatus_only();
-		if (s->page_completed >= total_pages
-		    && (s->aux & (CAPT_AUX_SAFE_TIMER | CAPT_AUX_PAPER_DELIVERY)) == 0)
-			break;
-		usleep(100000);
-	}
 }
 
 static void lbp2900_page_setup(struct printer_state_s *state,

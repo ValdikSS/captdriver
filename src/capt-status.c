@@ -34,6 +34,7 @@ static inline char bit(enum capt_flags flag)
 	return FLAG(&status, flag) ? '1' : '0';
 }
 
+#ifdef DEBUG
 static void print_status(void)
 {
 	fprintf(stderr, "DEBUG: CAPT: printer status P1=%c P2=%c B=%c B0=%c B1=%c nE=%c\n",
@@ -49,6 +50,7 @@ static void print_status(void)
 		status.page_completed
 	);
 }
+#endif
 
 static void decode_status(const uint8_t *s, size_t size)
 {
@@ -70,6 +72,7 @@ static void decode_status(const uint8_t *s, size_t size)
 	status.aux            = s[CAPT_XSTAT_AUX];    /* byte 9:  Aux auxiliary engine status */
 	status.xstat_cnt      = s[CAPT_XSTAT_CNT];    /* byte 10: Cnt engine flags */
 	status.xstat_pap      = s[CAPT_XSTAT_PAP];    /* byte 11: Pap paper availability */
+	status.xstat_eng      = WORD(s[CAPT_XSTAT_ENG_LO], s[CAPT_XSTAT_ENG_HI]); /* bytes 13-14: Eng engine error flags */
 
 	status.status[2] = WORD(s[10], s[11]);
 	status.status[3] = WORD(s[12], s[13]);

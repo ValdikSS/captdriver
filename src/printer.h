@@ -42,6 +42,7 @@ struct printer_state_s {
 	bool startprint_sent;      /* StartPrint was already sent in streaming mode */
 	uint8_t paper_sz;          /* paper size byte (for SetLEDStatus NoPaper payload) */
 	int pages_printed_before_error; /* pages successfully printed before out-of-paper */
+	unsigned printer_page_offset; /* ipage bias after OOP recovery (printer counters reset to 0) */
 };
 
 struct printer_ops_s {

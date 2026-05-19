@@ -33,6 +33,7 @@ struct capt_status_s {
 	uint8_t  xstat_cnt;        /* GetExtendedStatus byte 10 (Cnt) engine comm flags */
 	uint8_t  xstat_pap;        /* GetExtendedStatus byte 11 (Pap) paper availability */
 	uint8_t  aux;              /* GetExtendedStatus byte 9 (Aux) auxiliary engine status */
+	uint16_t xstat_eng;        /* GetExtendedStatus bytes 13-14 (Eng) engine error flags */
 };
 
 #define _FL(s, b) ((s << 16) | (1 << b))
