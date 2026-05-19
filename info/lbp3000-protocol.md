@@ -1253,32 +1253,42 @@ After an out-of-paper recovery `GoOnline`, all four counters reset to **0** rega
 
 ## 5. Paper Size Table (`tPaperSizeTbl`)
 
-Used in `SetLEDStatus` byte 4 and reported in `GetInputStatus` byte 6.
+**Column semantics:**
 
-| Internal ID | Table Index | Name             |
-|-------------|-------------|------------------|
-| 0x08        | 1           | A3               |
-| 0x09        | 2           | A4               |
-| 0x0B        | 3           | A5               |
-| 0x0C        | 6           | B4               |
-| 0x0D        | 7           | B5               |
-| 0x07        | 0x0A        | Executive        |
-| 0x05        | 0x0C        | Legal            |
-| 0x03        | 0x0B        | Ledger           |
-| 0x01        | 0x0D        | Letter           |
-| 0x2B        | 0x0E        | Postcard         |
-| 0x52        | 0x0F        | Double Postcard  |
-| 0x1C        | 0x15        | Envelope C5      |
-| 0x14        | 0x16        | Envelope #10     |
-| 0x25        | 0x17        | Envelope Monarch |
-| 0x1B        | 0x18        | Envelope DL      |
-| 0x22        | 0x19        | Envelope B5      |
-| 0x5B        | 0x1A        | Envelope Y4      |
-| 0x1F        | 0x1C        | Envelope Y2      |
-| 0x47        | 0x1B        | Envelope K2      |
-| 0x10CC      | 0x37        | 4×1 Postcard     |
-| 0x06        | 0x3C        | Statement        |
-| 0x023A      | 0x40        | Index Card       |
+- **`paper_id`** — the internal paper size identifier used throughout the driver:
+  in the paper-name → ID lookup table, in `papersize_res600_cntblmodel1` (physical
+  pixel dimensions), and in `papertable_strange_dims` (margin source values).
+  This is **not** the value written directly into `D0A0` byte 5.
+
+- **`PaperSzByte`** (`D0A0` byte 5 / `SetLEDStatus` byte 4 / `GetInputStatus` byte 6) —
+  derived from `paper_id` via a linear scan of `tPaperSizeTbl` (`struc_8057020`
+  pairs at `.data:08057020`): the driver walks the table until it finds a matching
+  `paper_id` in the first field, then takes the second field as `PaperSzByte`.
+
+| `paper_id` | `PaperSzByte` | Name             |
+|------------|---------------|------------------|
+| 0x08       | 1             | A3               |
+| 0x09       | 2             | A4               |
+| 0x0B       | 3             | A5               |
+| 0x0C       | 6             | B4               |
+| 0x0D       | 7             | B5               |
+| 0x07       | 10            | Executive        |
+| 0x05       | 12            | Legal            |
+| 0x03       | 11            | Ledger           |
+| 0x01       | 13            | Letter           |
+| 0x2B       | 14            | Postcard         |
+| 0x52       | 15            | Double Postcard  |
+| 0x1C       | 21            | Envelope C5      |
+| 0x14       | 22            | Envelope #10 (Com10) |
+| 0x25       | 23            | Envelope Monarch |
+| 0x1B       | 24            | Envelope DL      |
+| 0x22       | 25            | Envelope B5      |
+| 0x5B       | 26            | Envelope Y4 (jenv_you4) |
+| 0x47       | 27            | Envelope K2 (jenv_kaku2) |
+| 0x1F       | 28            | Envelope Y2 (jenv_you2) |
+| 0x106      | 28            | Envelope Y2 (alt ID) |
+| 0x10CC     | 55            | 4×1 Postcard (4x_postcard) |
+| 0x023A     | 64            | Index Card       |
 
 ---
 
@@ -1342,34 +1352,41 @@ Full status table (from `captmon2` binary, `error_code` column):
 | GoOnline magic | `ee db ea ad` | First 4 bytes of GoOnline payload (Windows: 16 bytes; Linux: 8 bytes) |
 | Toner density default | `0x1f` per channel | Bits 5-2 = density value 7; same in Windows and Linux |
 | A4 papertable_strange_dims | p1=410, p2=600, p3=510, p4=510 | Margin source values (in 1/1000 inch). MarginW=600×410/2540≈96px, MarginH=600×510/2540≈120px |
-| A4 paper pixel dims | width=0x13EC (5100), height=0x19C8 (6600) | From papersize_res600_cntblmodel1, paper_id=1 |
+| A4 paper pixel dims | width=0x1360 (4960), height=0x1B66 (7014) | From papersize_res600_cntblmodel1, paper_id=9 (0x09) |
 | A4 ImgHeight (Windows) | 6776 (0x1a78) | From lbp3000-windowsxp captures |
 | A4 ImgHeight (Linux) | 6784 (0x1a80) | From lbp3000.pcap / parsed/lbp3000.txt; 8 lines more than Windows |
 
 ### Paper size table for LBP3000 (CNTblModel=1, 600 dpi — `papersize_res600_cntblmodel1`)
 
-| paper_id | width_bands | height_bands | width_pixels | height_pixels | paper_flag |
-|----------|-------------|--------------|--------------|---------------|------------|
-| 0x01 (A4)      | 0x0264 (612) | 0x0318 (792) | 0x13EC (5100) | 0x19C8 (6600) | 0 |
-| 0x05 (Legal)   | 0x0264 (612) | 0x03F0 (1008)| 0x13EC (5100) | 0x20D0 (8400) | 0 |
-| 0x07 (Executive)| 0x020A (522)| 0x02F4 (756) | 0x10FE (4350) | 0x189C (6300) | 0 |
-| 0x0B (A5)      | 0x01A4 (420) | 0x0253 (595) | 0x0DA8 (3496) | 0x1360 (4960) | 0 |
-| 0x0D (B5)      | 0x0204 (516) | 0x02D9 (729) | 0x10CA (4298) | 0x17B6 (6070) | 0 |
-| 0x09 (B4)      | 0x0253 (595) | 0x034A (842) | 0x1360 (4960) | 0x1B66 (7014) | 0 |
-| 0x2B (Postcard)| 0x011B (283) | 0x01A4 (420) | 0x093A (2362) | 0x0DA8 (3496) | 0 |
-| 0x52 (Dbl Postcard)| 0x01A4 (420)| 0x0237 (567)| 0x0DA8 (3496)| 0x1274 (4724) | 0 |
-| 0x10CC (4×1 Postcard)| 0x0237 (567)| 0x0347 (839)| 0x1274 (4724)| 0x1B66 (7014) | 0 |
-| 0x5B (Env Y4)  | 0x0128 (296) | 0x029A (666) | 0x09B0 (2480) | 0x15AE (5550) | 0 |
-| 0x1F (Env Y2)  | 0x0143 (323) | 0x01CB (459) | 0x0A84 (2692) | 0x0EF2 (3826) | 0 |
-| 0x106 (Env Y2 dup)| 0x0143 (323)| 0x01CB (459)| 0x0A84 (2692)| 0x0EF2 (3826)| 0 |
-| 0x14 (Env #10) | 0x0129 (297) | 0x02AC (684) | 0x09AE (2478) | 0x1644 (5700) | 0 |
-| 0x1C (Env C5)  | 0x01CB (459) | 0x0289 (649) | 0x0EF2 (3826) | 0x1520 (5408) | 0 |
-| 0x1B (Env DL)  | 0x0138 (312) | 0x0270 (624) | 0x0A26 (2598) | 0x144C (5196) | 0 |
-| 0x25 (Env Monarch)| 0x0117 (279)| 0x021C (540)| 0x0918 (2328)| 0x1194 (4500) | 0 |
-| 0x22 (Env B5)  | 0x01F3 (499) | 0x02C5 (709) | 0x1026 (4134) | 0x1712 (5906) | 0 |
-| 0x11F8 (custom)| 0x00D8 (216) | 0x0168 (360) | 0x0708 (1800) | 0x0BB8 (3000) | 0 |
+Paper names are taken from `off_8057BC0` (the paper-name → `paper_id` lookup table).
+Note: A3 (paper_id=8) and B4 (paper_id=0x0C) are **not present** in this table —
+those sizes are not supported by this printer model.
+`width_bands`/`height_bands` are in points (1/72 inch); `width_pixels`/`height_pixels`
+are at 600 dpi.
 
-*Note: `paper_id` values correspond to internal IDs, which map to `tPaperSizeTbl` via `sub_804A240()`. `width_bands`/`height_bands` are in units where 72 = 1 inch (i.e., points/72dpi), while `width_pixels`/`height_pixels` are the actual 600 dpi pixel dimensions.*
+| paper_id | Name             | width_bands  | height_bands | width_pixels  | height_pixels  | paper_flag |
+|----------|------------------|--------------|--------------|---------------|----------------|------------|
+| 0x01     | Letter           | 0x0264 (612) | 0x0318 (792) | 0x13EC (5100) | 0x19C8 (6600)  | 0 |
+| 0x05     | Legal            | 0x0264 (612) | 0x03F0 (1008)| 0x13EC (5100) | 0x20D0 (8400)  | 0 |
+| 0x07     | Executive        | 0x020A (522) | 0x02F4 (756) | 0x10FE (4350) | 0x189C (6300)  | 0 |
+| 0x09     | A4               | 0x0253 (595) | 0x034A (842) | 0x1360 (4960) | 0x1B66 (7014)  | 0 |
+| 0x0B     | A5               | 0x01A4 (420) | 0x0253 (595) | 0x0DA8 (3496) | 0x1360 (4960)  | 0 |
+| 0x0D     | B5               | 0x0204 (516) | 0x02D9 (729) | 0x10CA (4298) | 0x17B6 (6070)  | 0 |
+| 0x2B     | Postcard         | 0x011B (283) | 0x01A4 (420) | 0x093A (2362) | 0x0DA8 (3496)  | 0 |
+| 0x52     | Dbl Postcard     | 0x01A4 (420) | 0x0237 (567) | 0x0DA8 (3496) | 0x1274 (4724)  | 0 |
+| 0x10CC   | 4x1 Postcard     | 0x0237 (567) | 0x0347 (839) | 0x1274 (4724) | 0x1B66 (7014)  | 0 |
+| 0x5B     | Env Y4 (jenv_you4)| 0x0128 (296)| 0x029A (666) | 0x09B0 (2480) | 0x15AE (5550)  | 0 |
+| 0x1F     | Env Y2 (jenv_you2)| 0x0143 (323)| 0x01CB (459) | 0x0A84 (2692) | 0x0EF2 (3826)  | 0 |
+| 0x106    | Env Y2 (alt ID)  | 0x0143 (323) | 0x01CB (459) | 0x0A84 (2692) | 0x0EF2 (3826)  | 0 |
+| 0x14     | Com10 (Env #10)  | 0x0129 (297) | 0x02AC (684) | 0x09AE (2478) | 0x1644 (5700)  | 0 |
+| 0x1C     | Envelope C5      | 0x01CB (459) | 0x0289 (649) | 0x0EF2 (3826) | 0x1520 (5408)  | 0 |
+| 0x1B     | Envelope DL      | 0x0138 (312) | 0x0270 (624) | 0x0A26 (2598) | 0x144C (5196)  | 0 |
+| 0x25     | Monarch          | 0x0117 (279) | 0x021C (540) | 0x0918 (2328) | 0x1194 (4500)  | 0 |
+| 0x22     | Envelope B5      | 0x01F3 (499) | 0x02C5 (709) | 0x1026 (4134) | 0x1712 (5906)  | 0 |
+| 0x11F8   | Index 3×5        | 0x00D8 (216) | 0x0168 (360) | 0x0708 (1800) | 0x0BB8 (3000)  | 0 |
+
+*Note: `paper_id` is the internal size identifier from `off_8057BC0` / `papertable_strange_dims`.
+It maps to `PaperSzByte` (used in `D0A0` byte 5) via `tPaperSizeTbl`.*
 
 ---
 
@@ -1422,10 +1439,10 @@ The bind-edge shift (`CNBindEdgeShift`) optionally adds
 
 | paper_id       | p1   | p2   | p3   | p4   | Notes                              |
 |----------------|------|------|------|------|------------------------------------|
-| 0x01 A4        | 410  | 600  | 510  | 510  | MarginW=96px, MarginH=120px @600dpi |
+| 0x01 Letter    | 410  | 600  | 510  | 510  |                                    |
 | 0x05 Legal     | 410  | 600  | 510  | 510  |                                    |
 | 0x07 Executive | 410  | 600  | 510  | 510  |                                    |
-| 0x09 B4        | 410  | 600  | 510  | 510  |                                    |
+| 0x09 A4        | 410  | 600  | 510  | 510  | MarginW=96px, MarginH=120px @600dpi |
 | 0x0B A5        | 410  | 600  | 510  | 510  |                                    |
 | 0x0D B5        | 410  | 600  | 510  | 510  |                                    |
 | 0x2B Postcard  | 510  | 510  | 510  | 510  | equal margins all sides            |
@@ -1439,6 +1456,7 @@ The bind-edge shift (`CNBindEdgeShift`) optionally adds
 | 0x1B Env DL    | 1000 | 1000 | 1000 | 1000 |                                    |
 | 0x25 Env Mon.  | 1000 | 1000 | 1000 | 1000 |                                    |
 | 0x11F8 custom  | 1000 | 1000 | 1000 | 1000 |                                    |
+
 
 ### 8.3 IC_BEGIN_PAGE (D0A0) Line-Size / Printable-Area Computation
 
@@ -1460,11 +1478,11 @@ LineSize  = width_aligned  / 8   (bytes per raster line, written to D0A0 bytes 2
 ImgHeight = height_aligned       (raster lines, written to D0A0 bytes 29-30)
 ```
 
-For A4 plain paper, no bind-edge shift, at 600 dpi:
+For A4 plain paper (paper_id=0x09, pixel dims 4960×7014), no bind-edge shift, at 600 dpi:
 - `paper_dim3 = paper_dim4 = 600 * 510 / 2540 = 120 px`
 - `width_printable = 4960 - 120 - 120 = 4720` → not 32-aligned → `4736`, LineSize=592
 - `paper_dim1 = 600 * 410 / 2540 = 96 px`, `paper_dim2 = 600 * 600 / 2540 = 141 px`
-- `height_printable = 6600 - 96 - 141 = 6363` → aligned → 6368, but observed 6776
+- `height_printable = 7014 - 96 - 141 = 6777` → aligned to next 32-px boundary → 6784, but Windows observed 6776
 
 *Note: the observed `ImgHeight=6776` is larger than the strict margin calculation
 would give; the actual clipping may use fewer margin bits, or margins only apply
