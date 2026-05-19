@@ -240,7 +240,6 @@ static void lbp3000_job_prologue(struct printer_state_s *state)
 		usleep(200000);
 	}
 
-	capt_sendrecv(CAPT_START_0, NULL, 0, NULL, 0);
 	capt_sendrecv(CAPT_RESERVE_UNIT, magicbuf_0, ARRAY_SIZE(magicbuf_0), buf, &size);
 	job=WORD(buf[2], buf[3]);
 
