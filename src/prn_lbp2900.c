@@ -623,12 +623,17 @@ static bool lbp2900_page_epilogue(struct printer_state_s *state, const struct pa
 		 * descriptor (Start == ipage), then send StartPrint immediately.
 		 * Do NOT call lbp2900_wait_ready() here — CMD_BUSY (0x04) is set
 		 * throughout physical printing of the previous page and will not clear
-		 * until it finishes, which defeats pipeline parallelism. */
-		while (1) {
-			usleep(100000);
-			status = lbp2900_get_status(state->ops);
-			if (status->page_decoding >= state->ipage)
-				break;
+		 * until it finishes, which defeats pipeline parallelism.
+		 *
+		 * Fast-path: if Start==N was already confirmed during IC_VIDEO_DATA upload,
+		 * skip the poll loop entirely (spec §3.3, §14 Rule 10). */
+		status = lbp2900_get_status(state->ops);
+		if (status->page_decoding != state->ipage) {
+			/* Start not yet confirmed — poll until Start==N exact match (spec §3.3) */
+			do {
+				usleep(100000);
+				status = lbp2900_get_status(state->ops);
+			} while (status->page_decoding != state->ipage);
 		}
 
 		/* SetJobInfo2(flag=2): send ONCE when Printed first becomes >= 1 (mid-job).
