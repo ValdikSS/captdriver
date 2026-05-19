@@ -722,26 +722,17 @@ static void lbp2900_job_epilogue(struct printer_state_s *state)
 	capt_sendrecv(CAPT_GO_OFFLINE, jbuf, 2, NULL, 0);
 	capt_sendrecv(CAPT_RELEASE_UNIT, jbuf, 2, NULL, 0);
 
-	/* Post-job drain: alternate GetInputStatus + GetExtendedStatus until
-	 * Printed (page_completed) == totalPages, per protocol §3.1.1 §9.7.
-	 * This ensures the driver does not exit while the printer is still
-	 * physically ejecting the last page. */
+	/* Post-job drain: alternate GetInputStatus + GetExtendedStatus until BOTH
+	 * Printed == totalPages AND Aux == 0x00 (RCF_SAFE_TIMER and RCF_PAPER_DELIVERY
+	 * both cleared). Spec §8, §14 Rule 15. */
 	while (1) {
 		const struct capt_status_s *s;
 		capt_sendrecv(CAPT_GET_INPUT_STATUS, NULL, 0, NULL, 0);
 		s = capt_get_xstatus_only();
-		if (s->page_completed >= total_pages)
+		if (s->page_completed >= total_pages
+		    && (s->aux & (CAPT_AUX_SAFE_TIMER | CAPT_AUX_PAPER_DELIVERY)) == 0)
 			break;
 		usleep(100000);
-	}
-
-	/* Wait for motor to stop: poll until RCF_SAFE_TIMER (Aux & 0x80) clears.
-	 * Protocol §3.1.1: after job end the motor runs down before it is safe to exit. */
-	for (int i = 0; i < 200; i++) {
-		const struct capt_status_s *s = capt_get_xstatus_only();
-		if (!(s->aux & CAPT_AUX_SAFE_TIMER))
-			break;
-		usleep(200000);
 	}
 }
 
