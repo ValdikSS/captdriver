@@ -197,12 +197,37 @@ static void compress_page_data(struct printer_state_s *state,
 static void send_page_data(struct printer_state_s *state, const struct cached_page_s *page)
 {
 	const struct band_list_s *band;
+	size_t total_size = 0;
+	uint8_t *allbands;
+	uint8_t *p;
 
 	state->isend = 0;
 	state->iband = 0;
 
-	for (band = page->bands; band; band = band->next, ++state->iband)
-		state->ops->send_band(state, band->data, band->size);
+	/* Compute total compressed size across all bands. */
+	for (band = page->bands; band; band = band->next)
+		total_size += band->size;
+
+	if (total_size == 0)
+		return;
+
+	/* Concatenate all band payloads into one buffer so that
+	 * send_band can handle chunking itself at chunk_max granularity,
+	 * instead of issuing a separate USB transfer + status poll per band. */
+	allbands = malloc(total_size);
+	if (!allbands)
+		abort();
+
+	p = allbands;
+	for (band = page->bands; band; band = band->next, ++state->iband) {
+		if (band->size) {
+			memcpy(p, band->data, band->size);
+			p += band->size;
+		}
+	}
+
+	state->ops->send_band(state, allbands, total_size);
+	free(allbands);
 }
 
 static void do_cancel(int s)
