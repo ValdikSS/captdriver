@@ -108,13 +108,12 @@ const struct capt_status_s *capt_get_status(void)
 const struct capt_status_s *capt_get_xstatus_only(void)
 {
 	download_status(CAPT_GET_EXTENDED_STATUS);
+#ifdef DEBUG
 	print_status();
-	/*
+#endif
 	if (FLAG(&status, CAPT_FL_NEED_INPUT_STATUS)) {
-	   capt_sendrecv(CAPT_GET_INPUT_STATUS, NULL, 0, NULL, 0);
-	   print_status();
+		capt_sendrecv(CAPT_GET_INPUT_STATUS, NULL, 0, NULL, 0);
 	}
-	*/
 
 	return &status;
 }
