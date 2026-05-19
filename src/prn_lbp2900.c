@@ -58,6 +58,11 @@ static const uint8_t magicbuf_2[] = {
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
+/* Linux GoOnline payload: 8 bytes only (Windows uses 16) — protocol §2.12 */
+static const uint8_t magicbuf_linux_online[] = {
+	0xEE, 0xDB, 0xEA, 0xAD, 0x00, 0x00, 0x00, 0x00
+};
+
 static const uint8_t lbp2900_gpio_blink[] = {
 	0x00, 0x00, 0x01, 0x02, 0x01, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x01, 0x00,
@@ -125,26 +130,69 @@ static void capt_get_printer_info(struct printer_state_s *state)
 	}
 }
 
-static void send_job_start(uint8_t fg, uint16_t page)
+static void send_job_start(uint8_t fg)
 {
-	uint8_t ml = 0x00; /* host name lenght */
-	uint8_t ul = 0x00; /* user name lenght */
-	uint8_t nl = 0x00; /* document name lenght */
+	/* host/user/document name lengths: all zero (no strings appended) */
+	uint8_t ml = 0x00;
+	uint8_t ul = 0x00;
+	uint8_t nl = 0x00;
+
 	time_t rawtime = time(NULL);
 	const struct tm *tm = localtime(&rawtime);
-	uint8_t buf[32 + 40 + ml + ul + nl];
-	uint8_t head[32] = {
-		0x00, 0x00, 0x00, 0x00, LO(page), HI(page), 0x00, 0x00,
-		ml, 0x00, ul, 0x00, nl, 0x00, 0x00, 0x00,
-		fg, 0x01, LO(job), HI(job),
-		/*-60 */ 0xC4, 0xFF,
-		/*-120*/ 0x88, 0xFF,
-		LO(tm->tm_year), HI(tm->tm_year), (uint8_t) tm->tm_mon, (uint8_t) tm->tm_mday,
-		(uint8_t) tm->tm_hour, (uint8_t) tm->tm_min, (uint8_t) tm->tm_sec,
-		0x01,
-	};
-	memcpy(buf, head, sizeof(head));
-	memset(buf + 32, 0, 40 + ml + ul + nl);
+
+	/* TZOffset: protocol uses seconds-west-of-UTC / 60.
+	 * `timezone` (from <time.h>) is seconds WEST of UTC (set by localtime()).
+	 * For Moscow UTC+3: timezone = -10800 → TZOffset = -180 = 0xFF4C LE.
+	 * Both TZOffset (bytes 20-21) and TZOffset2 (bytes 22-23) must be equal. */
+	int16_t tz = (int16_t)(timezone / 60);
+
+	/* Year must be 1900 + tm_year (e.g. 2026).
+	 * Month must be 1-indexed (1=Jan … 12=Dec). */
+	uint16_t year = (uint16_t)(tm->tm_year + 1900);
+	uint8_t month = (uint8_t)(tm->tm_mon + 1);
+
+	/* Fixed 72-byte payload per protocol §2.7:
+	 * bytes  0- 7: hard-coded zeros (bytes 1-8 in 1-indexed protocol)
+	 * bytes  8- 9: HostLen (uint16 LE)
+	 * bytes 10-11: UserLen (uint16 LE)
+	 * bytes 12-13: JobNameLen (uint16 LE)
+	 * bytes 14-15: hard-coded zeros
+	 * byte  16: JobFlag
+	 * byte  17: NumberUp = 1
+	 * bytes 18-19: JobID (uint16 LE)
+	 * bytes 20-21: TZOffset (int16 LE)
+	 * bytes 22-23: TZOffset2 (same value, int16 LE)
+	 * bytes 24-25: Year (uint16 LE)
+	 * byte  26: Month (1-indexed)
+	 * byte  27: Day
+	 * byte  28: Hour
+	 * byte  29: Minute
+	 * byte  30: Second
+	 * byte  31: hard-coded zero (NOT 0x01)
+	 * bytes 32-71: hard-coded zeros
+	 * Total payload: 72 bytes */
+	uint8_t buf[72];
+	memset(buf, 0, sizeof(buf));
+	buf[8]  = ml;
+	buf[10] = ul;
+	buf[12] = nl;
+	buf[16] = fg;
+	buf[17] = 0x01; /* NumberUp */
+	buf[18] = LO(job);
+	buf[19] = HI(job);
+	buf[20] = (uint8_t)(tz & 0xFF);
+	buf[21] = (uint8_t)((tz >> 8) & 0xFF);
+	buf[22] = (uint8_t)(tz & 0xFF);
+	buf[23] = (uint8_t)((tz >> 8) & 0xFF);
+	buf[24] = LO(year);
+	buf[25] = HI(year);
+	buf[26] = month;
+	buf[27] = (uint8_t)tm->tm_mday;
+	buf[28] = (uint8_t)tm->tm_hour;
+	buf[29] = (uint8_t)tm->tm_min;
+	buf[30] = (uint8_t)tm->tm_sec;
+	/* buf[31] = 0x00 (already zeroed) */
+
 	capt_sendrecv(CAPT_SET_JOB_INFO2, buf, sizeof(buf), NULL, 0);
 }
 
@@ -165,7 +213,7 @@ static void lbp2900_job_prologue(struct printer_state_s *state)
 	capt_sendrecv(CAPT_SET_LED_STATUS, lbp3010_gpio_init, ARRAY_SIZE(lbp3010_gpio_init), NULL, 0);
 	lbp2900_wait_ready(state->ops);
 
-	send_job_start(1, 0);
+	send_job_start(1);
 	lbp2900_wait_ready(state->ops);
 }
 
@@ -186,7 +234,7 @@ static void lbp3000_job_prologue(struct printer_state_s *state)
 	capt_sendrecv(CAPT_RESERVE_UNIT, magicbuf_0, ARRAY_SIZE(magicbuf_0), buf, &size);
 	job=WORD(buf[2], buf[3]);
 
-	send_job_start(CAPT_JOBFLAG_START, 0);
+	send_job_start(CAPT_JOBFLAG_START);
 
 	/* Only go offline if printer is currently online (protocol §3.1 §9.4).
 	 * Read GetBasicStatus and check the OFFLINE bit; skip GoOffline if
@@ -201,8 +249,8 @@ static void lbp3000_job_prologue(struct printer_state_s *state)
 	capt_sendrecv(CAPT_CLEAR_MIS_PRINT, NULL, 0, NULL, 0);
 	capt_sendrecv(CAPT_CLEAR_ERROR, NULL, 0, NULL, 0);
 	capt_sendrecv(CAPT_DISCARD_DATA, NULL, 0, NULL, 0);
-	/* GoOnline: 16-byte Windows payload with ee db ea ad magic (protocol §2.12) */
-	capt_sendrecv(CAPT_GO_ONLINE, magicbuf_2, ARRAY_SIZE(magicbuf_2), NULL, 0);
+	/* GoOnline: 8-byte Linux payload with ee db ea ad magic (protocol §2.12) */
+	capt_sendrecv(CAPT_GO_ONLINE, magicbuf_linux_online, ARRAY_SIZE(magicbuf_linux_online), NULL, 0);
 
 	lbp2900_wait_ready(state->ops);
 }
@@ -224,7 +272,7 @@ static void lbp3010_job_prologue(struct printer_state_s *state)
 	capt_sendrecv(CAPT_SET_LED_STATUS, lbp3010_gpio_init, ARRAY_SIZE(lbp3010_gpio_init), NULL, 0);
 	lbp2900_wait_ready(state->ops);
 
-	send_job_start(1, 0);
+	send_job_start(1);
 	lbp2900_wait_ready(state->ops);
 }
 
@@ -248,7 +296,7 @@ static void lbp6000_job_prologue(struct printer_state_s *state)
 	capt_sendrecv(CAPT_LBP6000_SETUP_0, lbp6000_job_init, ARRAY_SIZE(lbp6000_job_init), NULL, 0);
 	lbp2900_wait_ready(state->ops);
 
-	send_job_start(1, 0);
+	send_job_start(1);
 	lbp2900_wait_ready(state->ops);
 }
 
@@ -445,7 +493,7 @@ static void lbp3000_oop_recovery(struct printer_state_s *state)
 	capt_get_xstatus_only();
 
 	/* 9. GoOnline — pulse online to RESET page counters to 0 */
-	capt_sendrecv(CAPT_GO_ONLINE, magicbuf_2, ARRAY_SIZE(magicbuf_2), NULL, 0);
+	capt_sendrecv(CAPT_GO_ONLINE, magicbuf_linux_online, ARRAY_SIZE(magicbuf_linux_online), NULL, 0);
 	/* 10. GetBasicStatus — byte1 → 0x00 */
 	lbp2900_get_status(state->ops);
 	/* 11. GetExtendedStatus — Start=0, Printing=0, Shipped=0, Printed=0 (ALL RESET) */
@@ -520,7 +568,7 @@ static void lbp3000_oop_recovery(struct printer_state_s *state)
 	capt_get_xstatus_only();
 
 	/* GoOnline — bring back online, resets counters again */
-	capt_sendrecv(CAPT_GO_ONLINE, magicbuf_2, ARRAY_SIZE(magicbuf_2), NULL, 0);
+	capt_sendrecv(CAPT_GO_ONLINE, magicbuf_linux_online, ARRAY_SIZE(magicbuf_linux_online), NULL, 0);
 	/* GetBasicStatus — byte1 → 0x00 */
 	lbp2900_get_status(state->ops);
 	/* GetExtendedStatus — all counters 0 again */
@@ -564,7 +612,7 @@ static bool lbp2900_page_epilogue(struct printer_state_s *state, const struct pa
 		/* SetJobInfo2(flag=2): send ONCE when Printed first becomes >= 1 (mid-job).
 		 * Protocol §2.7 §9.16: Windows driver sends this only once, not per-page. */
 		if (!state->sent_job_cont && status->page_completed >= 1) {
-			send_job_start(CAPT_JOBFLAG_CONT, status->page_decoding);
+			send_job_start(CAPT_JOBFLAG_CONT);
 			state->sent_job_cont = true;
 		}
 
@@ -577,7 +625,7 @@ static bool lbp2900_page_epilogue(struct printer_state_s *state, const struct pa
 		status = lbp2900_get_status(state->ops);
 		/* SetJobInfo2(flag=2): send ONCE when Printed first becomes >= 1 (mid-job). */
 		if (!state->sent_job_cont && status->page_completed >= 1) {
-			send_job_start(CAPT_JOBFLAG_CONT, status->page_decoding);
+			send_job_start(CAPT_JOBFLAG_CONT);
 			state->sent_job_cont = true;
 		}
 	}
@@ -645,7 +693,7 @@ static void lbp2900_job_epilogue(struct printer_state_s *state)
 		if (status->page_completed == status->page_decoding) {
 			/* SetJobInfo2(flag=6): Windows canonical job-end marker per protocol §2.7.
 			 * Was incorrectly flag=4 (abort); changed to CAPT_JOBFLAG_END=6. */
-			send_job_start(CAPT_JOBFLAG_END, status->page_completed);
+			send_job_start(CAPT_JOBFLAG_END);
 			break;
 		}
 		usleep(100000);
@@ -684,22 +732,20 @@ static void lbp2900_page_setup(struct printer_state_s *state,
 static void lbp2900_cancel_cleanup(struct printer_state_s *state)
 {
 	(void) state;
-	const struct capt_status_s *status = lbp2900_get_status(state->ops);
 	uint8_t jbuf[2] = { LO(job), HI(job) };
 
 	capt_sendrecv(CAPT_SET_LED_STATUS, lbp2900_gpio_init, ARRAY_SIZE(lbp2900_gpio_init), NULL, 0);
-	send_job_start(4, status->page_completed);
+	send_job_start(CAPT_JOBFLAG_ABORT);
 	capt_sendrecv(CAPT_RELEASE_UNIT, jbuf, 2, NULL, 0);
 }
 
 static void lbp3010_cancel_cleanup(struct printer_state_s *state)
 {
 	(void) state;
-	const struct capt_status_s *status = lbp2900_get_status(state->ops);
 	uint8_t jbuf[2] = { LO(job), HI(job) };
 
 	capt_sendrecv(CAPT_SET_LED_STATUS, lbp3010_gpio_init, ARRAY_SIZE(lbp3010_gpio_init), NULL, 0);
-	send_job_start(4, status->page_completed);
+	send_job_start(CAPT_JOBFLAG_ABORT);
 	capt_sendrecv(CAPT_RELEASE_UNIT, jbuf, 2, NULL, 0);
 }
 
