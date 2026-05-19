@@ -69,14 +69,14 @@ void ops_send_band_hiscoa(struct printer_state_s *state, const void *data, size_
 		if (buflevel_slots == 0) {
 			if (size > 0 && !state->startprint_sent) {
 				/* Streaming mode: fire StartPrint(N) only after Start==N is confirmed.
-				 * Must wait until page_decoding >= ipage before sending StartPrint
-				 * (protocol §2.18a: Start counter must be incremented first). */
+				 * GetExtendedStatus is required — GetBasicStatus does NOT update
+				 * page_decoding (Start counter). Spec §4.4: Start==N exact match. */
 				uint8_t spbuf[2] = { LO(state->ipage), HI(state->ipage) };
-				for (int w = 0; w < 500 && status->page_decoding < state->ipage; w++) {
-					status = capt_get_status();
+				for (int w = 0; w < 20 && status->page_decoding != state->ipage; w++) {
+					status = capt_get_xstatus_only();
 					usleep(50000);
 				}
-				if (status->page_decoding >= state->ipage) {
+				if (status->page_decoding == state->ipage) {
 					fprintf(stderr, "DEBUG: CAPT: streaming mode: BufLevel=0, sending StartPrint(%u)\n",
 						state->ipage);
 					capt_sendrecv(CAPT_START_PRINT, spbuf, 2, NULL, 0);
