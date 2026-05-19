@@ -698,9 +698,9 @@ static void lbp2900_job_epilogue(struct printer_state_s *state)
 	while (1) {
 		const struct capt_status_s *status = lbp2900_get_status(state->ops);
 		if (status->page_completed == status->page_decoding) {
-			/* SetJobInfo2(flag=6): Windows canonical job-end marker per protocol §2.7.
-			 * Was incorrectly flag=4 (abort); changed to CAPT_JOBFLAG_END=6. */
-			send_job_start(CAPT_JOBFLAG_END);
+			/* SetJobInfo2(flag=3): Linux job-end marker per protocol §2.7.
+			 * Windows uses flag=6 (CAPT_JOBFLAG_END); Linux must use flag=3 (CAPT_JOBFLAG_END_LIN). */
+			send_job_start(CAPT_JOBFLAG_END_LIN);
 			break;
 		}
 		usleep(100000);
