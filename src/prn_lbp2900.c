@@ -271,6 +271,10 @@ static void lbp3000_job_prologue(struct printer_state_s *state)
 	capt_sendrecv(CAPT_GO_ONLINE, magicbuf_linux_online, ARRAY_SIZE(magicbuf_linux_online), NULL, 0);
 
 	lbp2900_wait_ready(state->ops);
+	/* GetExtendedStatus: confirm Start=0,Printing=0,Shipped=0,Printed=0 (protocol §2) */
+	capt_get_xstatus_only();
+	/* GetBasicStatus: final check after GoOnline (protocol §2) */
+	lbp2900_get_status(state->ops);
 }
 
 static void lbp3010_job_prologue(struct printer_state_s *state)
