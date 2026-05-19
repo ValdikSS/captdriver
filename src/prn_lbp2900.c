@@ -244,11 +244,11 @@ static void lbp3000_job_prologue(struct printer_state_s *state)
 		capt_sendrecv(CAPT_GO_OFFLINE, lbp3000_job_init, ARRAY_SIZE(lbp3000_job_init), NULL, 0);
 	}
 
-	/* Windows canonical clear order: ClearMisPrint → ClearError → DiscardData → GoOnline
-	 * (protocol §3.1.1 Windows order, §9 note 18) */
+	/* Linux canonical clear order: DiscardData → ClearMisPrint → ClearError → GoOnline
+	 * (protocol §3.1.1 Linux order, §9 note 18) */
+	capt_sendrecv(CAPT_DISCARD_DATA, NULL, 0, NULL, 0);
 	capt_sendrecv(CAPT_CLEAR_MIS_PRINT, NULL, 0, NULL, 0);
 	capt_sendrecv(CAPT_CLEAR_ERROR, NULL, 0, NULL, 0);
-	capt_sendrecv(CAPT_DISCARD_DATA, NULL, 0, NULL, 0);
 	/* GoOnline: 8-byte Linux payload with ee db ea ad magic (protocol §2.12) */
 	capt_sendrecv(CAPT_GO_ONLINE, magicbuf_linux_online, ARRAY_SIZE(magicbuf_linux_online), NULL, 0);
 
