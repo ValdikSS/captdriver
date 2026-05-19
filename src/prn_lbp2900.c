@@ -469,8 +469,8 @@ static bool lbp2900_page_prologue(struct printer_state_s *state, const struct pa
 	uint8_t pageparms[] = {
 		/* idx  0- 7 */
 		0x00, 0x00, 0x30, 0x2A, sz, 0x00, 0x00, 0x00,
-		/* idx  8-15: TonerDensity (4 equal bytes), PaperType, ResFlag=0x11, Fixed_04, Fixed_00 */
-		td, td, td, td, paper_type, 0x11, 0x04, 0x00,
+		/* idx  8-15: TonerDensity, PaperType, ResFlag=0x11, Fixed_04, Fixed_00 */
+		td, 0x1C, 0x1C, 0x1C, paper_type, 0x11, 0x04, 0x00,
 		/* idx 16-23: Fixed_01, Fixed_01b, SuperSmooth=0x02, TonerSave, Unk21=0x00, 0x00, MarginH LE */
 		0x01, 0x01, 0x02, save, 0x00, 0x00,
 		LO(dims->margin_height), HI(dims->margin_height),

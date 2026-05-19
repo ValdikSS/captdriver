@@ -30,7 +30,15 @@ Version 0.1.4
 	Choice True/Enabled	"<</cupsInteger2 1>>setpagedevice"
 
 	{
-                *Resolution k 1 70 592 0 "600dpi/600 DPI"
+		*Resolution k 1 70 592 0 "600dpi/600 DPI"
+
+		// Darkness
+		Option "captDarkness/Darkness" PickOne AnySetup 10
+		Choice "1/Extra Light" "<</cupsInteger1   1>>setpagedevice"
+		Choice 4/Light "<</cupsInteger1    4>>setpagedevice"
+		*Choice 7/Normal "<</cupsInteger1   7>>setpagedevice"
+		Choice 11/Dark "<</cupsInteger1  11>>setpagedevice"
+		Choice "15/Extra Dark" "<</cupsInteger1  15>>setpagedevice"
 
 		/* LBP 2900/3000, with multi-page size and type support */
 		MediaType 0 "Plain/Plain Paper"
