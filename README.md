@@ -1,5 +1,23 @@
 # captdriver - alternative driver for Canon CAPT printers
 
+This is a fork of https://github.com/mounaiban/captdriver
+
+It focuses on LBP3000 (could have broke support for others) and fixes the following:
+
+* Incorrect paper dimensions
+* Slow printing and delay before first print
+* Proper error and interal state handling
+
+It is based on my reverse-engineering effors of captmon2 (LBP2900, LBP3000)
+and captfilter Linux binaries, and USB data dumps from Windows XP Canon driver,
+however all the code has been written by LLM assistant from my documentation,
+experiments and observations.
+
+Flaws:
+* Does not continue printing after paper jams, no cartridge/opened door — filter terminates, you'll need to reprint manually
+
+-------------------------------------------------------------
+
 **Captdriver an alternative driver for Canon laser printers**
 that only support the proprietary CAPT communications protocol
 and associated data stream formats.
