@@ -83,11 +83,27 @@ void ops_send_band_hiscoa(struct printer_state_s *state, const void *data, size_
 					state->startprint_sent = true;
 				}
 			}
-			/* Poll until BufLevel rises to >= 1 */
-			do {
-				status = capt_get_status();
-				buflevel_slots = CAPT_BUFLEVEL_SLOTS(status->buf_level);
-			} while (buflevel_slots == 0);
+			/* Poll until BufLevel rises to >= 1.
+			 * Track byte1 changes: when byte1 changes, call GetExtendedStatus so
+			 * the driver observes Start counter advancing to N+1 during drain.
+			 * Spec §4.3: optionally call GetExtendedStatus on byte1 change. */
+			{
+				uint8_t prev_byte1 = (uint8_t)(status->status[0] & 0xFF);
+				do {
+					status = capt_get_status();
+					buflevel_slots = CAPT_BUFLEVEL_SLOTS(status->buf_level);
+					{
+						uint8_t cur_byte1 = (uint8_t)(status->status[0] & 0xFF);
+						if (cur_byte1 != prev_byte1) {
+							prev_byte1 = cur_byte1;
+							status = capt_get_xstatus_only();
+							buflevel_slots = CAPT_BUFLEVEL_SLOTS(status->buf_level);
+							if (FLAG(status, CAPT_FL_NEED_INPUT_STATUS))
+								capt_sendrecv(CAPT_GET_INPUT_STATUS, NULL, 0, NULL, 0);
+						}
+					}
+				} while (buflevel_slots == 0);
+			}
 			chunks_since_poll = 0;
 		}
 
