@@ -91,12 +91,13 @@ void ops_send_band_hiscoa(struct printer_state_s *state, const void *data, size_
 		chunks_since_poll++;
 
 		/* Adaptive polling interval: more frequent as BufLevel drops.
-		 * buflevel >= 12: poll every 5 chunks (lots of room).
-		 * buflevel  4-11: poll every 2 chunks (moderate).
-		 * buflevel  1- 3: poll every chunk   (nearly full). */
-		if (buflevel_slots >= 12)
+		 * buflevel >= 15: burst mode, poll every 5 chunks.
+		 * buflevel  8-14: moderate, poll every 2 chunks.
+		 * buflevel  1- 7: nearly full, poll every chunk.
+		 * (protocol flow document: 7/8 boundary) */
+		if (buflevel_slots >= 15)
 			poll_interval = 5;
-		else if (buflevel_slots >= 4)
+		else if (buflevel_slots >= 8)
 			poll_interval = 2;
 		else
 			poll_interval = 1;
