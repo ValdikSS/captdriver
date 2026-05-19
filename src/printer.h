@@ -36,7 +36,12 @@ struct printer_state_s {
 	unsigned ipage;
 	unsigned iband;
 	unsigned isend;
-	bool sent_job_cont;    /* SetJobInfo2(flag=2) has been sent once */
+	bool sent_job_cont;        /* SetJobInfo2(flag=2) has been sent once */
+	uint16_t printer_blk;      /* max IC_VIDEO_DATA chunk size from GetPrinterInfo */
+	uint16_t printer_buf;      /* buffer count from GetPrinterInfo */
+	bool startprint_sent;      /* StartPrint was already sent in streaming mode */
+	uint8_t paper_sz;          /* paper size byte (for SetLEDStatus NoPaper payload) */
+	int pages_printed_before_error; /* pages successfully printed before out-of-paper */
 };
 
 struct printer_ops_s {

@@ -57,10 +57,18 @@ static void decode_status(const uint8_t *s, size_t size)
 	if (size <= 2)
 		return;
 
+	/* BufLevel low byte is at payload byte 5 (0-indexed: s[4]), byte 6 = s[5].
+	 * Parse it whenever we have at least 6 payload bytes (total size > 8). */
+	if (size > 8)
+		status.buf_level = s[4];  /* CAPT_BSTAT_BUF_LO / CAPT_XSTAT_BUF_LO */
+
 	status.status[1] = WORD(s[8], s[9]);
 
 	if (size <= 10)
 		return;
+
+	status.xstat_cnt      = s[CAPT_XSTAT_CNT];    /* byte 10: Cnt engine flags */
+	status.xstat_pap      = s[CAPT_XSTAT_PAP];    /* byte 11: Pap paper availability */
 
 	status.status[2] = WORD(s[10], s[11]);
 	status.status[3] = WORD(s[12], s[13]);

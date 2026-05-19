@@ -98,6 +98,33 @@ static void lbp2900_wait_ready(const struct printer_ops_s *ops)
 	lops->wait_ready();
 }
 
+/*
+ * Parse GetPrinterInfo reply and store Blk/Buf in printer state.
+ * Per protocol §2.1 and §9 note 1:
+ *   Blk = bytes 7-8 of the reply body (0-indexed: bytes 6-7), uint16 LE.
+ *   Buf = bytes 9-10 of the reply body (0-indexed: bytes 8-9), uint16 LE.
+ * LBP3000 defaults: Blk=0xfff0 (65520), Buf=0x0040 (64).
+ */
+static void capt_get_printer_info(struct printer_state_s *state)
+{
+	uint8_t buf[32];
+	size_t size = sizeof(buf);
+	capt_sendrecv(CAPT_GET_PRINTER_INFO, NULL, 0, buf, &size);
+	if (size >= 10) {
+		state->printer_blk = WORD(buf[6], buf[7]);
+		state->printer_buf = WORD(buf[8], buf[9]);
+		fprintf(stderr, "DEBUG: CAPT: GetPrinterInfo Blk=0x%04x (%u) Buf=0x%04x (%u)\n",
+			state->printer_blk, state->printer_blk,
+			state->printer_buf, state->printer_buf);
+	} else {
+		/* Default values for LBP3000 if reply is too short */
+		state->printer_blk = 65520;
+		state->printer_buf = 64;
+		fprintf(stderr, "DEBUG: CAPT: GetPrinterInfo reply too short (%u), using defaults\n",
+			(unsigned)size);
+	}
+}
+
 static void send_job_start(uint8_t fg, uint16_t page)
 {
 	uint8_t ml = 0x00; /* host name lenght */
@@ -123,11 +150,10 @@ static void send_job_start(uint8_t fg, uint16_t page)
 
 static void lbp2900_job_prologue(struct printer_state_s *state)
 {
-	(void) state;
 	uint8_t buf[8];
 	size_t size;
 
-	capt_sendrecv(CAPT_GET_PRINTER_INFO, NULL, 0, NULL, 0);
+	capt_get_printer_info(state);
 	sleep(1);
 	capt_init_status();
 	lbp2900_get_status(state->ops);
@@ -151,7 +177,7 @@ static void lbp3000_job_prologue(struct printer_state_s *state)
 
 	state->sent_job_cont = false;
 
-	capt_sendrecv(CAPT_GET_PRINTER_INFO, NULL, 0, NULL, 0);
+	capt_get_printer_info(state);
 	sleep(1);
 	capt_init_status();
 	lbp2900_get_status(state->ops);
@@ -183,11 +209,10 @@ static void lbp3000_job_prologue(struct printer_state_s *state)
 
 static void lbp3010_job_prologue(struct printer_state_s *state)
 {
-	(void) state;
 	uint8_t buf[8];
 	size_t size;
 
-	capt_sendrecv(CAPT_GET_PRINTER_INFO, NULL, 0, NULL, 0);
+	capt_get_printer_info(state);
 	sleep(1);
 	capt_init_status();
 	lbp2900_get_status(state->ops);
@@ -205,11 +230,10 @@ static void lbp3010_job_prologue(struct printer_state_s *state)
 
 static void lbp6000_job_prologue(struct printer_state_s *state)
 {
-	(void) state;
 	uint8_t buf[8];
 	size_t size;
 
-	capt_sendrecv(CAPT_GET_PRINTER_INFO, NULL, 0, NULL, 0);
+	capt_get_printer_info(state);
 	sleep(1);
 	capt_init_status();
 	lbp2900_get_status(state->ops);
@@ -302,6 +326,12 @@ static bool lbp2900_page_prologue(struct printer_state_s *state, const struct pa
 	else sz = 0x02;
 	fprintf(stderr, "DEBUG: CAPT: media_size=%s, sz=0x%02x\n", dims->media_size, sz);
 
+	/* Save paper size byte for use in out-of-paper SetLEDStatus payload. */
+	state->paper_sz = sz;
+
+	/* Reset streaming-mode flag for each new page. */
+	state->startprint_sent = false;
+
 	/* IC_BEGIN_PAGE (D0A0) 40-byte payload per protocol §2.14:
 	 * idx  0- 1: PageSeq (set to 0x0000 here; sequence filled per page)
 	 * idx  2- 3: ModelConst = 0x2a30 for LBP3000 (LE: 0x30, 0x2a)
@@ -380,41 +410,216 @@ static bool lbp2900_page_prologue(struct printer_state_s *state, const struct pa
 	return true;
 }
 
+/*
+ * Out-of-paper recovery sequence (protocol §3.2, §9 notes 11-12).
+ *
+ * Called when GetBasicStatus shows NOTREADY|OFFLINE and GetExtendedStatus
+ * confirms PRINT_REJECTED + Pap==0x00.
+ *
+ * Returns after the printer is back online and ready to reprint.
+ * Callers should track pages_printed_before_error for reprint logic.
+ */
+static void lbp3000_oop_recovery(struct printer_state_s *state)
+{
+	const struct capt_status_s *status;
+
+	fprintf(stderr, "DEBUG: CAPT: out-of-paper recovery starting\n");
+
+	/* 1. GetInputStatus — triggered by Bas1 & NEED_INPUT_STATUS; byte3=0x80 confirms paper-out */
+	capt_sendrecv(CAPT_GET_INPUT_STATUS, NULL, 0, NULL, 0);
+	/* 2. GetBasicStatus */
+	lbp2900_get_status(state->ops);
+	/* 3. GetExtendedStatus — Cnt=0x40 (PRINT_REJECTED), Pap=0x00 */
+	capt_get_xstatus_only();
+
+	/* 4. ClearMisPrint */
+	capt_sendrecv(CAPT_CLEAR_MIS_PRINT, NULL, 0, NULL, 0);
+	/* 5. ClearError */
+	capt_sendrecv(CAPT_CLEAR_ERROR, NULL, 0, NULL, 0);
+	/* 6. DiscardData */
+	capt_sendrecv(CAPT_DISCARD_DATA, NULL, 0, NULL, 0);
+
+	/* 7. GetBasicStatus */
+	lbp2900_get_status(state->ops);
+	/* 8. GetExtendedStatus — Bas=0x10 (offline), Cnt=0x00 (cleared) */
+	capt_get_xstatus_only();
+
+	/* 9. GoOnline — pulse online to RESET page counters to 0 */
+	capt_sendrecv(CAPT_GO_ONLINE, magicbuf_2, ARRAY_SIZE(magicbuf_2), NULL, 0);
+	/* 10. GetBasicStatus — byte1 → 0x00 */
+	lbp2900_get_status(state->ops);
+	/* 11. GetExtendedStatus — Start=0, Printing=0, Shipped=0, Printed=0 (ALL RESET) */
+	capt_get_xstatus_only();
+
+	/* 12. GetBasicStatus */
+	lbp2900_get_status(state->ops);
+
+	/* 13. SetLEDStatus(NoPaper):
+	 *   byte1 = CAPT_INTSTAT_NO_PAPER (9)
+	 *   byte2 = 0x00
+	 *   byte3 = CAPT_HSCODE_NO_PAPER (1)
+	 *   byte4 = paper_size_id
+	 *   byte5 = 0x01
+	 *   bytes 6-8 = 0x00
+	 *   bytes 9-12 = CAPT_HOSTERR_NO_PAPER (0x00010000 LE)
+	 *
+	 * Using 12-byte payload matching lbp2900_gpio_init format. */
+	uint8_t led_nopaper[12] = {
+		CAPT_INTSTAT_NO_PAPER,  /* byte index 0: int_status */
+		0x00,                   /* byte index 1 */
+		CAPT_HSCODE_NO_PAPER,   /* byte index 2: hs_code */
+		state->paper_sz,        /* byte index 3: paper_size_id */
+		0x01,                   /* byte index 4 */
+		0x00, 0x00, 0x00,       /* byte index 5-7 */
+		/* bytes 9-12 = CAPT_HOSTERR_NO_PAPER = 0x00010000 in LE */
+		0x00, 0x00, 0x01, 0x00, /* byte index 8-11 */
+	};
+	capt_sendrecv(CAPT_SET_LED_STATUS, led_nopaper, sizeof(led_nopaper), NULL, 0);
+
+	/* 14. GetBasicStatus */
+	lbp2900_get_status(state->ops);
+	/* 15. GetExtendedStatus */
+	capt_get_xstatus_only();
+
+	/* 16. GoOffline — go offline to wait */
+	capt_sendrecv(CAPT_GO_OFFLINE, lbp3000_job_init, ARRAY_SIZE(lbp3000_job_init), NULL, 0);
+	/* 17. GetBasicStatus — byte1 = 0x10 (offline) */
+	lbp2900_get_status(state->ops);
+
+	fprintf(stderr, "DEBUG: CAPT: out-of-paper: waiting for user to insert paper\n");
+
+	/* [Wait for user — poll loop:]
+	 * 18. Poll GetBasicStatus repeatedly until NEED_INPUT_STATUS bit set
+	 *     (user inserts paper and presses physical go button). */
+	while (1) {
+		status = lbp2900_get_status(state->ops);
+		/* CAPT_FL2_NEED_INPUT_STATUS (byte 2 bit 0x02) signals button press */
+		if (FLAG(status, CAPT_FL_NEED_INPUT_STATUS))
+			break;
+		sleep(1);
+	}
+
+	/* 19. NEED_INPUT_STATUS is set: paper inserted and button pressed. */
+	/* GetInputStatus — byte3 changes from 0x80 → 0xc0 (engine ready) */
+	capt_sendrecv(CAPT_GET_INPUT_STATUS, NULL, 0, NULL, 0);
+
+	/* SetLEDStatus(0) — clear NoPaper LED (all 12 payload bytes = 0x00) */
+	uint8_t led_clear[12] = { 0 };
+	capt_sendrecv(CAPT_SET_LED_STATUS, led_clear, sizeof(led_clear), NULL, 0);
+
+	/* ClearMisPrint */
+	capt_sendrecv(CAPT_CLEAR_MIS_PRINT, NULL, 0, NULL, 0);
+	/* ClearError */
+	capt_sendrecv(CAPT_CLEAR_ERROR, NULL, 0, NULL, 0);
+	/* DiscardData */
+	capt_sendrecv(CAPT_DISCARD_DATA, NULL, 0, NULL, 0);
+
+	/* GetBasicStatus */
+	lbp2900_get_status(state->ops);
+	/* GetExtendedStatus */
+	capt_get_xstatus_only();
+
+	/* GoOnline — bring back online, resets counters again */
+	capt_sendrecv(CAPT_GO_ONLINE, magicbuf_2, ARRAY_SIZE(magicbuf_2), NULL, 0);
+	/* GetBasicStatus — byte1 → 0x00 */
+	lbp2900_get_status(state->ops);
+	/* GetExtendedStatus — all counters 0 again */
+	capt_get_xstatus_only();
+
+	fprintf(stderr, "DEBUG: CAPT: out-of-paper recovery complete, counters reset to 0\n");
+	/* After recovery, page counters are reset to 0.
+	 * Caller must track pages_printed_before_error to know where to resume. */
+}
+
 static bool lbp2900_page_epilogue(struct printer_state_s *state, const struct page_dims_s *dims)
 {
 	(void) dims;
 	const struct capt_status_s *status;
 
+	/*
+	 * IC_BLACK_END / StartPrint sequencing (protocol §2.18a):
+	 *
+	 * Normal mode (startprint_sent == false):
+	 *   all chunks fit in buffer → send IC_BLACK_END → StartPrint(N)
+	 *
+	 * Streaming mode (startprint_sent == true):
+	 *   StartPrint(N) was already sent mid-stream → send IC_BLACK_END only
+	 *   (ops_send_band_hiscoa already drained BufLevel to >= 1 before returning)
+	 */
 	capt_send(CAPT_IC_BLACK_END, NULL, 0);
 
-	/* waiting until the page is received */
-	while (1) {
-	  sleep(1);
-	  status = lbp2900_get_status(state->ops);
-	  if (status->page_received == status->page_decoding)
-	    break;
-	}
+	if (!state->startprint_sent) {
+		/* Normal mode: waiting until the page descriptor is received, then StartPrint */
+		while (1) {
+			sleep(1);
+			status = lbp2900_get_status(state->ops);
+			if (status->page_received == status->page_decoding)
+				break;
+		}
 
-	/* SetJobInfo2(flag=2): send ONCE when Printed first becomes >= 1 (mid-job).
-	 * Protocol §2.7 §9.16: Windows driver sends this only once, not per-page. */
-	if (!state->sent_job_cont && status->page_completed >= 1) {
-		send_job_start(CAPT_JOBFLAG_CONT, status->page_decoding);
-		state->sent_job_cont = true;
-	}
-	lbp2900_wait_ready(state->ops);
+		/* SetJobInfo2(flag=2): send ONCE when Printed first becomes >= 1 (mid-job).
+		 * Protocol §2.7 §9.16: Windows driver sends this only once, not per-page. */
+		if (!state->sent_job_cont && status->page_completed >= 1) {
+			send_job_start(CAPT_JOBFLAG_CONT, status->page_decoding);
+			state->sent_job_cont = true;
+		}
+		lbp2900_wait_ready(state->ops);
 
-	uint8_t buf[2] = { LO(status->page_decoding), HI(status->page_decoding) };
-	capt_sendrecv(CAPT_START_PRINT, buf, 2, NULL, 0);
-	lbp2900_wait_ready(state->ops);
+		uint8_t buf[2] = { LO(status->page_decoding), HI(status->page_decoding) };
+		capt_sendrecv(CAPT_START_PRINT, buf, 2, NULL, 0);
+		lbp2900_wait_ready(state->ops);
+	} else {
+		/* Streaming mode: StartPrint was already sent in ops_send_band_hiscoa.
+		 * Just wait for the printer to be ready. */
+		lbp2900_wait_ready(state->ops);
+
+		status = lbp2900_get_status(state->ops);
+		/* SetJobInfo2(flag=2): send ONCE when Printed first becomes >= 1 (mid-job). */
+		if (!state->sent_job_cont && status->page_completed >= 1) {
+			send_job_start(CAPT_JOBFLAG_CONT, status->page_decoding);
+			state->sent_job_cont = true;
+		}
+	}
 
 	/* SetJobInfo2(flag=6) at job end is now sent once in lbp2900_job_epilogue,
 	 * not per-page here, per protocol §2.7 §3.1.1. */
 
 	while (1) {
-		const struct capt_status_s *status = lbp2900_get_status(state->ops);
+		status = lbp2900_get_status(state->ops);
 		/* Interesting. Using page_printing here results in shifted print */
 		if (status->page_out == status->page_decoding)
 			return true;
+
+		/*
+		 * Out-of-paper detection (protocol §3.2, §9 notes 11-12):
+		 * Byte 1: NOTREADY (0x02) | OFFLINE (0x10) set during printing.
+		 * Confirm via GetExtendedStatus: PRINT_REJECTED (Cnt & 0x40) AND Pap == 0x00.
+		 */
+		if ((FLAG(status, CAPT_FL_NOTREADY) || FLAG(status, CAPT_FL_OFFLINE))
+		    && !FLAG(status, CAPT_FL_PRINTING)
+		    && !FLAG(status, CAPT_FL_PROCESSING1)) {
+			/* Confirm with GetExtendedStatus */
+			capt_get_xstatus_only();
+			status = lbp2900_get_status(state->ops);
+			if ((status->xstat_cnt & CAPT_CNT_PRINT_REJECTED)
+			    && status->xstat_pap == 0x00) {
+				fprintf(stderr, "DEBUG: CAPT: out-of-paper confirmed (Cnt=0x%02x, Pap=0x%02x)\n",
+					status->xstat_cnt, status->xstat_pap);
+				/*
+				 * Track pages printed before the error for reprint logic.
+				 * Page counters will reset to 0 after GoOnline in recovery.
+				 */
+				state->pages_printed_before_error = (int)status->page_completed;
+				lbp3000_oop_recovery(state);
+				/*
+				 * After recovery, page counters are reset.
+				 * Return false so the caller can reprint the affected page.
+				 */
+				return false;
+			}
+		}
+
+		/* Legacy no-paper flags from extended status */
 		if (FLAG(status, CAPT_FL_NOPAPER2) || FLAG(status, CAPT_FL_NOTREADY)) {
 			fprintf(stderr, "DEBUG: CAPT: no paper\n");
 			if (FLAG(status, CAPT_FL_PRINTING) || FLAG(status, CAPT_FL_PROCESSING1))

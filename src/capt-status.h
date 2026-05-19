@@ -29,6 +29,9 @@ struct capt_status_s {
 	uint16_t page_out;
 	uint16_t page_completed;
 	uint16_t page_received;
+	uint8_t  buf_level;        /* BufLevel low byte from GetBasicStatus bytes 5-6 */
+	uint8_t  xstat_cnt;        /* GetExtendedStatus byte 10 (Cnt) engine comm flags */
+	uint8_t  xstat_pap;        /* GetExtendedStatus byte 11 (Pap) paper availability */
 };
 
 #define _FL(s, b) ((s << 16) | (1 << b))

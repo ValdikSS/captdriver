@@ -27,6 +27,7 @@
 #include "printer.h"
 
 #include <stdlib.h>
+#include <stdio.h>
 
 size_t ops_compress_band_hiscoa(struct printer_state_s *state,
 		void *band, size_t size,
@@ -40,15 +41,85 @@ size_t ops_compress_band_hiscoa(struct printer_state_s *state,
 void ops_send_band_hiscoa(struct printer_state_s *state, const void *data, size_t size)
 {
 	const uint8_t *pdata = (const uint8_t *) data;
+	const struct capt_status_s *status;
+	int buflevel_slots;
+	int chunks_since_poll = 0;
+	int poll_interval;
+
+	/* Determine chunk size limit from GetPrinterInfo Blk; default 65520 for LBP3000.
+	 * Also cap at 0xFF00 (65280) for safety with the USB framing layer. */
+	size_t chunk_max = state->printer_blk ? (size_t)state->printer_blk : 65520;
+	if (chunk_max > 0xFF00)
+		chunk_max = 0xFF00;
+
+	/* Read initial BufLevel from GetBasicStatus. */
+	status = capt_get_status();
+	buflevel_slots = CAPT_BUFLEVEL_SLOTS(status->buf_level);
+	fprintf(stderr, "DEBUG: CAPT: IC_VIDEO_DATA start, size=%u, chunk_max=%u, buflevel=%d\n",
+		(unsigned)size, (unsigned)chunk_max, buflevel_slots);
+
 	while (size) {
-		size_t send = 0xFF00;
+		size_t send = chunk_max;
 		if (send > size)
 			send = size;
-		state->isend += 1;
-		if (state->isend % 16 == 0)
-			capt_wait_ready();
+
+		/* BufLevel-based back-pressure (protocol §2.18, §9 note 3).
+		 * BufLevel == 0 means the printer buffer is completely full. */
+		if (buflevel_slots == 0) {
+			if (size > 0 && !state->startprint_sent) {
+				/* Streaming mode: fire StartPrint(N) before buffer drains.
+				 * page number comes from the current page counter. */
+				uint8_t spbuf[2] = { LO(state->ipage), HI(state->ipage) };
+				fprintf(stderr, "DEBUG: CAPT: streaming mode: BufLevel=0, sending StartPrint(%u)\n",
+					state->ipage);
+				capt_sendrecv(CAPT_START_PRINT, spbuf, 2, NULL, 0);
+				state->startprint_sent = true;
+			}
+			/* Poll until BufLevel rises to >= 1 */
+			do {
+				status = capt_get_status();
+				buflevel_slots = CAPT_BUFLEVEL_SLOTS(status->buf_level);
+			} while (buflevel_slots == 0);
+			chunks_since_poll = 0;
+		}
+
 		capt_send(CAPT_IC_VIDEO_DATA, pdata, send);
 		pdata += send;
 		size -= send;
+		state->isend += 1;
+		chunks_since_poll++;
+
+		/* Adaptive polling interval: more frequent as BufLevel drops.
+		 * buflevel >= 12: poll every 5 chunks (lots of room).
+		 * buflevel  4-11: poll every 2 chunks (moderate).
+		 * buflevel  1- 3: poll every chunk   (nearly full). */
+		if (buflevel_slots >= 12)
+			poll_interval = 5;
+		else if (buflevel_slots >= 4)
+			poll_interval = 2;
+		else
+			poll_interval = 1;
+
+		if (chunks_since_poll >= poll_interval) {
+			status = capt_get_status();
+			buflevel_slots = CAPT_BUFLEVEL_SLOTS(status->buf_level);
+			/* Honour secondary-flag requests from GetBasicStatus byte 2. */
+			if (FLAG(status, CAPT_FL_XSTATUS_CHANGED))
+				capt_get_xstatus_only();
+			if (FLAG(status, CAPT_FL_NEED_INPUT_STATUS))
+				capt_sendrecv(CAPT_GET_INPUT_STATUS, NULL, 0, NULL, 0);
+			chunks_since_poll = 0;
+		}
 	}
+
+	/* All chunks sent. Final BufLevel drain check for IC_BLACK_END. */
+	if (buflevel_slots == 0) {
+		do {
+			status = capt_get_status();
+			buflevel_slots = CAPT_BUFLEVEL_SLOTS(status->buf_level);
+		} while (buflevel_slots == 0);
+	}
+
+	fprintf(stderr, "DEBUG: CAPT: IC_VIDEO_DATA done, streaming=%d, buflevel=%d\n",
+		(int)state->startprint_sent, buflevel_slots);
 }
