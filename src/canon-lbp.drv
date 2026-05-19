@@ -42,7 +42,8 @@ Version 0.1.4
 
 		MinSize 76.2mm 127.0mm
 		MaxSize 215.9mm 355.6mm		// US Legal
-		HWmargins 5mm 5mm 5mm 5mm
+		// left bottom right top
+		HWmargins 5mm 4mm 4.5mm 4mm
 
 		/*
 		 * NOTE: Some of the sizes appear to be identical to

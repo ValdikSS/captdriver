@@ -25,16 +25,16 @@ void page_set_dims(struct page_dims_s *dims, const struct cups_page_header2_s *h
 {
 	dims->media_type = header->cupsMediaType;
 	strncpy(dims->media_size, header->MediaType, 64);
-	dims->paper_width  = header->cupsWidth;  //header->PageSize[0] * header->HWResolution[0] / 72;
-	dims->paper_height = header->cupsHeight; //header->PageSize[1] * header->HWResolution[1] / 72;
+	dims->paper_width  = header->cupsPageSize[0] * header->HWResolution[0] / 72.0f;
+	dims->paper_height = header->cupsPageSize[1] * header->HWResolution[1] / 72.0f;
 	dims->toner_save = header->cupsInteger[0];
 	dims->ink_k = header->cupsInteger[1];
 	dims->manual_duplex = header->cupsInteger[2];
-	dims->line_size = header->PageSize[0];
+	dims->line_size = header->cupsBytesPerLine;
 	dims->num_lines = header->cupsHeight;
 	dims->band_size = header->cupsRowCount;
-	dims->margin_height = header->Margins[0];
-	dims->margin_width = header->Margins[1];
+	dims->margin_height = (header->cupsPageSize[1] - header->cupsImagingBBox[3]) / 72.0f * header->HWResolution[0];
+	dims->margin_width = header->cupsImagingBBox[0] / 72.0f * header->HWResolution[0];
 
 	if (header->HWResolution[1] == 400)
 	  dims->media_adapt  = 0x81;
