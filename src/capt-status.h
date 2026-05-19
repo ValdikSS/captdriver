@@ -32,6 +32,7 @@ struct capt_status_s {
 	uint8_t  buf_level;        /* BufLevel low byte from GetBasicStatus bytes 5-6 */
 	uint8_t  xstat_cnt;        /* GetExtendedStatus byte 10 (Cnt) engine comm flags */
 	uint8_t  xstat_pap;        /* GetExtendedStatus byte 11 (Pap) paper availability */
+	uint8_t  aux;              /* GetExtendedStatus byte 9 (Aux) auxiliary engine status */
 };
 
 #define _FL(s, b) ((s << 16) | (1 << b))

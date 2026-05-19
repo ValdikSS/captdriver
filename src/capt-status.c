@@ -67,6 +67,7 @@ static void decode_status(const uint8_t *s, size_t size)
 	if (size <= 10)
 		return;
 
+	status.aux            = s[CAPT_XSTAT_AUX];    /* byte 9:  Aux auxiliary engine status */
 	status.xstat_cnt      = s[CAPT_XSTAT_CNT];    /* byte 10: Cnt engine flags */
 	status.xstat_pap      = s[CAPT_XSTAT_PAP];    /* byte 11: Pap paper availability */
 

@@ -726,6 +726,15 @@ static void lbp2900_job_epilogue(struct printer_state_s *state)
 			break;
 		usleep(100000);
 	}
+
+	/* Wait for motor to stop: poll until RCF_SAFE_TIMER (Aux & 0x80) clears.
+	 * Protocol §3.1.1: after job end the motor runs down before it is safe to exit. */
+	for (int i = 0; i < 200; i++) {
+		const struct capt_status_s *s = capt_get_xstatus_only();
+		if (!(s->aux & CAPT_AUX_SAFE_TIMER))
+			break;
+		usleep(200000);
+	}
 }
 
 static void lbp2900_page_setup(struct printer_state_s *state,
