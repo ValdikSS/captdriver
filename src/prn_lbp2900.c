@@ -258,6 +258,8 @@ static void lbp3000_job_prologue(struct printer_state_s *state)
 				break;
 			usleep(100000);
 		}
+		/* GetExtendedStatus to confirm offline (protocol §2 §7: Bas=0x10) */
+		capt_get_xstatus_only();
 	}
 
 	/* Linux canonical clear order: DiscardData → ClearMisPrint → ClearError → GoOnline
