@@ -705,6 +705,13 @@ static void lbp2900_job_epilogue(struct printer_state_s *state)
 		}
 		usleep(100000);
 	}
+	/* Linux epilogue: GetExtendedStatus → ClearError → DiscardData → GetExtendedStatus
+	 * → GoOffline(JobID) → ReleaseUnit (protocol §3.1.1 Linux order) */
+	capt_get_xstatus_only();
+	capt_sendrecv(CAPT_CLEAR_ERROR, NULL, 0, NULL, 0);
+	capt_sendrecv(CAPT_DISCARD_DATA, NULL, 0, NULL, 0);
+	capt_get_xstatus_only();
+	capt_sendrecv(CAPT_GO_OFFLINE, jbuf, 2, NULL, 0);
 	capt_sendrecv(CAPT_RELEASE_UNIT, jbuf, 2, NULL, 0);
 
 	/* Post-job drain: alternate GetInputStatus + GetExtendedStatus until
