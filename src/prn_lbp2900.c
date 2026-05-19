@@ -895,7 +895,7 @@ static void lbp3010_wait_user(struct printer_state_s *state)
 
 static struct lbp2900_ops_s lbp2900_ops = {
 	.ops = {
-		.job_prologue = lbp2900_job_prologue,
+		.job_prologue = lbp3000_job_prologue,
 		.job_epilogue = lbp2900_job_epilogue,
 		.page_setup = lbp2900_page_setup,
 		.page_prologue = lbp2900_page_prologue,
