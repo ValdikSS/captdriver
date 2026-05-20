@@ -5,7 +5,9 @@ This is a fork of https://github.com/mounaiban/captdriver
 It focuses on LBP3000 (could have broke support for others) and fixes the following:
 
 * Incorrect paper dimensions
+* Shifted printing after the first page
 * Slow printing and delay before first print
+* Inability to print pages larger than printer's RAM amount (streaming mode)
 * Proper error and interal state handling
 
 It is based on my reverse-engineering effors of captmon2 (LBP2900, LBP3000)
