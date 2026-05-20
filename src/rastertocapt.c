@@ -173,7 +173,8 @@ static void compress_page_data(struct printer_state_s *state,
 			}
 			memcpy(bandbuf + iline * dims->line_size + shiftb, linebuf + shiftl, csize);
 		}
-		size = state->ops->compress_band(state, compbuf, compsize, bandbuf, dims->line_size, nlines, nlines < dims->band_size);
+		size = state->ops->compress_band(state, compbuf, compsize, bandbuf, dims->line_size, nlines,
+			iband * dims->band_size + nlines >= dims->num_lines);
 		new_band = calloc(1, sizeof_struct_band_list_s(size));
 		if (! new_band)
 			abort();
