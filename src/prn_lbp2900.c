@@ -714,9 +714,9 @@ static bool lbp2900_page_epilogue(struct printer_state_s *state, const struct pa
 		if ((FLAG(status, CAPT_FL_NOTREADY) || FLAG(status, CAPT_FL_OFFLINE))
 		    && !FLAG(status, CAPT_FL_PRINTING)
 		    && !FLAG(status, CAPT_FL_PROCESSING1)) {
-			/* Confirm with GetExtendedStatus */
-			capt_get_xstatus_only();
-			status = lbp2900_get_status(state->ops);
+			/* Confirm with GetExtendedStatus — this populates xstat_cnt and xstat_pap */
+			status = capt_get_xstatus_only();
+			/* Do NOT call lbp2900_get_status() here — it would overwrite xstat fields */
 			if ((status->xstat_cnt & CAPT_CNT_PRINT_REJECTED)
 			    && status->xstat_pap == 0x00) {
 				fprintf(stderr, "DEBUG: CAPT: out-of-paper confirmed (Cnt=0x%02x, Pap=0x%02x)\n",
@@ -726,21 +726,21 @@ static bool lbp2900_page_epilogue(struct printer_state_s *state, const struct pa
 				 * Page counters will reset to 0 after GoOnline in recovery.
 				 */
 				state->pages_printed_before_error = (int)status->page_completed;
-					lbp3000_oop_recovery(state);
-					/*
-					 * After recovery the printer's Start/Printing/Printed counters
-					 * have been reset to 0 by GoOnline.  Record the offset so that
-					 * pipage = ipage - printer_page_offset is correct for the reprint.
-					 * The page that triggered OOP was never physically printed, so the
-					 * offset is (ipage - 1): the next attempt at ipage maps to pipage=1.
-					 */
-					state->printer_page_offset = state->ipage - 1;
-					fprintf(stderr, "DEBUG: CAPT: printer_page_offset set to %u (ipage=%u)\n",
-						state->printer_page_offset, state->ipage);
-					/*
-					 * Return false so the caller can reprint the affected page.
-					 */
-					return false;
+				lbp3000_oop_recovery(state);
+				/*
+				 * After recovery the printer's Start/Printing/Printed counters
+				 * have been reset to 0 by GoOnline.  Record the offset so that
+				 * pipage = ipage - printer_page_offset is correct for the reprint.
+				 * The page that triggered OOP was never physically printed, so the
+				 * offset is (ipage - 1): the next attempt at ipage maps to pipage=1.
+				 */
+				state->printer_page_offset = state->ipage - 1;
+				fprintf(stderr, "DEBUG: CAPT: printer_page_offset set to %u (ipage=%u)\n",
+					state->printer_page_offset, state->ipage);
+				/*
+				 * Return false so the caller can reprint the affected page.
+				 */
+				return false;
 			}
 		}
 
