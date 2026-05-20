@@ -17,6 +17,8 @@ Flaws:
 * Does not continue printing after paper jams, no cartridge/opened door — filter terminates, you'll need to reprint manually
 * The output is shifted to the left after every page, the printer reports RCF_UNDERRUN, there's a bug somewhere
 
+To make it work reliably, **you have to use CUPS v2.4.17+**, as it includes the fix for [USB race condition](https://github.com/OpenPrinting/cups/issues/1461).
+
 -------------------------------------------------------------
 
 **Captdriver an alternative driver for Canon laser printers**
