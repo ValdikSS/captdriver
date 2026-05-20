@@ -138,11 +138,46 @@ void ops_send_band_hiscoa(struct printer_state_s *state, const void *data, size_
 		}
 	}
 
-	/* All chunks sent. Final BufLevel drain check for IC_BLACK_END. */
+	/* All chunks sent. Check if we need to send StartPrint for streaming mode.
+	 * This handles the case where BufLevel dropped to 0 after sending the last chunk,
+	 * so the streaming check at line 70 never triggered. Per spec §4.4, streaming mode
+	 * requires StartPrint BEFORE IC_BLACK_END to tell engine to consume buffer. */
+	if (buflevel_slots == 0 && !state->startprint_sent) {
+		/* Poll GetExtendedStatus to confirm Start==N before sending StartPrint.
+		 * Spec §4.4: StartPrint requires Start==N exact match. */
+		uint8_t spbuf[2] = { LO(state->ipage), HI(state->ipage) };
+		for (int w = 0; w < 20 && status->page_decoding != state->ipage; w++) {
+			status = capt_get_xstatus_only();
+			usleep(50000);
+		}
+		if (status->page_decoding == state->ipage) {
+			fprintf(stderr, "DEBUG: CAPT: streaming mode (post-loop): BufLevel=0, sending StartPrint(%u)\n",
+				state->ipage);
+			capt_sendrecv(CAPT_START_PRINT, spbuf, 2, NULL, 0);
+			state->startprint_sent = true;
+		} else {
+			fprintf(stderr, "WARNING: CAPT: BufLevel=0 after all chunks sent, but Start=%u != page=%u, cannot send StartPrint\n",
+				status->page_decoding, state->ipage);
+		}
+	}
+
+	/* Final BufLevel drain check for IC_BLACK_END.
+	 * In streaming mode, StartPrint was sent above, so engine will consume and BufLevel will rise.
+	 * In normal mode, BufLevel should already be >= 1. */
 	if (buflevel_slots == 0) {
+		uint8_t prev_byte1 = (uint8_t)(status->status[0] & 0xFF);
 		do {
 			status = capt_get_status();
 			buflevel_slots = CAPT_BUFLEVEL_SLOTS(status->buf_level);
+			/* Track byte1 changes during drain (spec §4.3, §8 observation). */
+			uint8_t cur_byte1 = (uint8_t)(status->status[0] & 0xFF);
+			if (cur_byte1 != prev_byte1) {
+				prev_byte1 = cur_byte1;
+				status = capt_get_xstatus_only();
+				buflevel_slots = CAPT_BUFLEVEL_SLOTS(status->buf_level);
+				if (FLAG(status, CAPT_FL_NEED_INPUT_STATUS))
+					capt_sendrecv(CAPT_GET_INPUT_STATUS, NULL, 0, NULL, 0);
+			}
 		} while (buflevel_slots == 0);
 	}
 
