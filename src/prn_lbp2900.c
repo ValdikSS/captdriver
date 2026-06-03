@@ -472,8 +472,8 @@ static bool lbp2900_page_prologue(struct printer_state_s *state, const struct pa
 	 * idx 19   : TonerSave = 0x00 off by default
 	 * idx 20   : Unk21 = 0x00 (Windows value)
 	 * idx 21   : 0x00 for LBP3000
-	 * idx 22-23: MarginH uint16 LE
-	 * idx 24-25: MarginW uint16 LE
+	 * idx 22-23: MarginW uint16 LE
+	 * idx 24-25: MarginH uint16 LE
 	 * idx 26-27: LineSize uint16 LE
 	 * idx 28-29: ImgHeight uint16 LE
 	 * idx 30-31: PaperW uint16 LE
@@ -488,11 +488,11 @@ static bool lbp2900_page_prologue(struct printer_state_s *state, const struct pa
 		0x00, 0x00, 0x30, 0x2A, sz, 0x00, 0x00, 0x00,
 		/* idx  8-15: TonerDensity, PaperType, ResFlag=0x11, Fixed_04, Fixed_00 */
 		td, 0x1C, 0x1C, 0x1C, paper_type, dims->media_adapt, 0x04, 0x00,
-		/* idx 16-23: Fixed_01, Fixed_01b, SuperSmooth=0x02, TonerSave, Unk21=0x00, 0x00, MarginH LE */
+		/* idx 16-23: Fixed_01, Fixed_01b, SuperSmooth=0x02, TonerSave, Unk21=0x00, 0x00, MarginW LE */
 		0x01, 0x01, 0x02, save, 0x00, 0x00,
-		LO(dims->margin_height), HI(dims->margin_height),
-		/* idx 24-31: MarginW LE, LineSize LE, ImgHeight LE */
 		LO(dims->margin_width), HI(dims->margin_width),
+		/* idx 24-31: MarginH LE, LineSize LE, ImgHeight LE */
+		LO(dims->margin_height), HI(dims->margin_height),
 		LO(dims->line_size), HI(dims->line_size),
 		LO(dims->num_lines), HI(dims->num_lines),
 		/* idx 32-39: PaperW LE, PaperH LE, FixFlags=0x0000, MediaType, padding */

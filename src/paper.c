@@ -33,7 +33,7 @@ void page_set_dims(struct page_dims_s *dims, const struct cups_page_header2_s *h
 	dims->line_size = header->cupsBytesPerLine;
 	dims->num_lines = header->cupsHeight;
 	dims->band_size = header->cupsRowCount;
-	dims->margin_height = (header->cupsPageSize[1] - header->cupsImagingBBox[3]) / 72.0f * header->HWResolution[0];
+	dims->margin_height = (header->cupsPageSize[1] - header->cupsImagingBBox[3]) / 72.0f * header->HWResolution[1];
 	dims->margin_width = header->cupsImagingBBox[0] / 72.0f * header->HWResolution[0];
 
 	if (header->HWResolution[1] == 400)
