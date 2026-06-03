@@ -60,6 +60,11 @@ struct printer_ops_s {
 	void (*send_band) (struct printer_state_s *state, const void *band, size_t size);
 	void (*cancel_cleanup) (struct printer_state_s *state);
 	void (*wait_user) (struct printer_state_s *state);
+	/* GPIO LED control data (pointer to byte arrays) */
+	const uint8_t *gpio_init;
+	const uint8_t gpio_init_size;
+	const uint8_t *gpio_blink;
+	const uint8_t gpio_blink_size;
 };
 
 const struct printer_ops_s *printer_detect(void);
