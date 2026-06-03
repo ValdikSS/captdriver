@@ -286,6 +286,19 @@ static void lbp3000_job_prologue(struct printer_state_s *state)
 
 	job = capt_reserve_unit(state);
 
+	capt_sendrecv(CAPT_SET_POWER_DOWN, lbp6000_job_init, ARRAY_SIZE(lbp6000_job_init), NULL, 0);
+	status = lbp2900_get_status(state->ops);
+	if (FLAG(status, CAPT_FL_NOTREADY)) {
+		for (int i = 0; i < 50; i++) {
+			status = lbp2900_get_status(state->ops);
+			if (!FLAG(status, CAPT_FL_NOTREADY))
+				break;
+			usleep(100000);
+		}
+		/* GetExtendedStatus to confirm offline (protocol §2 §7: Bas=0x10) */
+		capt_get_xstatus_only();
+	}
+
 	send_job_start(CAPT_JOBFLAG_START);
 
 	/* Only go offline if printer is currently online (protocol §3.1 §9.4).
@@ -350,7 +363,7 @@ static void lbp6000_job_prologue(struct printer_state_s *state)
 	capt_sendrecv(CAPT_SET_LED_STATUS, lbp3010_gpio_init, ARRAY_SIZE(lbp3010_gpio_init), NULL, 0);
 	lbp2900_wait_ready(state->ops);
 
-	capt_sendrecv(CAPT_LBP6000_SETUP_0, lbp6000_job_init, ARRAY_SIZE(lbp6000_job_init), NULL, 0);
+	capt_sendrecv(CAPT_SET_POWER_DOWN, lbp6000_job_init, ARRAY_SIZE(lbp6000_job_init), NULL, 0);
 	lbp2900_wait_ready(state->ops);
 
 	send_job_start(1);
@@ -378,40 +391,44 @@ static bool lbp2900_page_prologue(struct printer_state_s *state, const struct pa
 	uint8_t paper_type = 0x00;
 
 	switch (dims->media_type) {
-		case 0x00:
-		case 0x02:
-			/* Plain Paper & Plain Paper L */
+		case 0x80:
+			/* Plain Paper, special case for LBP2900/3000 */
 			fm = 0x01;
 			paper_type = 0x00;
+			break;
+		case 0x00:
+			/* Plain Paper */
+			fm = 0x01;
+			paper_type = 0x01;
+			break;
+		case 0x02:
+			/* Plain Paper L */
+			fm = 0x02;
+			paper_type = 0x04;
 			break;
 		case 0x01:
 			/* Thick Paper */
 			fm = 0x01;
-			paper_type = 0x00;
+			paper_type = 0x03;
 			break;
 		case 0x03:
 			/* Thick Paper H */
-			fm = 0x02;
-			paper_type = 0x00;
+			fm = 0x03;
+			paper_type = 0x05;
 			break;
 		case 0x04:
 			/* Transparency */
 			fm = 0x13;
-			paper_type = 0x24;
+			paper_type = 0x24; // ???
 			break;
 		case 0x05:
-			/* Transparency */
-			fm = 0x14;
-			paper_type = 0x24;
-			break;
-		case 0x06:
 			/* Envelope */
-			fm = 0x1C;
-			paper_type = 0x20;
+			fm = 0x05;
+			paper_type = 0x07;
 			break;
 		default:
 			fm = 0x01;
-			paper_type = 0x00;
+			paper_type = 0x01;
 	}
 	fprintf(stderr, "DEBUG: CAPT: media_type=%u, fm=%u, paper_type=0x%02x\n",
 		dims->media_type, fm, paper_type);
@@ -470,7 +487,7 @@ static bool lbp2900_page_prologue(struct printer_state_s *state, const struct pa
 		/* idx  0- 7 */
 		0x00, 0x00, 0x30, 0x2A, sz, 0x00, 0x00, 0x00,
 		/* idx  8-15: TonerDensity, PaperType, ResFlag=0x11, Fixed_04, Fixed_00 */
-		td, 0x1C, 0x1C, 0x1C, paper_type, 0x11, 0x04, 0x00,
+		td, 0x1C, 0x1C, 0x1C, paper_type, dims->media_adapt, 0x04, 0x00,
 		/* idx 16-23: Fixed_01, Fixed_01b, SuperSmooth=0x02, TonerSave, Unk21=0x00, 0x00, MarginH LE */
 		0x01, 0x01, 0x02, save, 0x00, 0x00,
 		LO(dims->margin_height), HI(dims->margin_height),
@@ -957,7 +974,7 @@ static struct lbp2900_ops_s lbp3010_ops = {
 
 static struct lbp2900_ops_s lbp6000_ops = {
 	.ops = {
-		.job_prologue = lbp6000_job_prologue,
+		.job_prologue = lbp3000_job_prologue,
 		.job_epilogue = lbp2900_job_epilogue,
 		.page_setup = lbp2900_page_setup,
 		.page_prologue = lbp2900_page_prologue,

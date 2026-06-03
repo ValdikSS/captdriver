@@ -56,7 +56,7 @@ enum capt_command {
 	CAPT_GO_OFFLINE         = 0xE0A6, /* GoOffline */
 	CAPT_START_PRINT        = 0xE0A7, /* StartPrint */
 	CAPT_RELEASE_UNIT       = 0xE0A9, /* ReleaseUnit */
-	CAPT_LBP6000_SETUP_0    = 0xE0BA,
+	CAPT_SET_POWER_DOWN     = 0xE0BA,
 
 	CAPT_SET_JOB_INFO2      = 0xE1A1, /* SetJobInfo2 */
 	CAPT_SET_LED_STATUS     = 0xE1A2, /* SetLEDStatus */
