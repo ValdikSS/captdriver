@@ -2,7 +2,7 @@
 
 This is a fork of https://github.com/mounaiban/captdriver
 
-It focuses on LBP3000 (could have broke support for others) and fixes the following:
+It focuses on LBP2900, LBP3000, LBP6000 (could have broke support for others) and fixes the following:
 
 * Incorrect paper dimensions
 * Shifted printing after the first page
