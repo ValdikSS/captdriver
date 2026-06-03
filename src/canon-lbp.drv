@@ -15,7 +15,7 @@
 Copyright "(C)2020 Moses Chong"
 ColorModel "Gray/Grayscale" k chunky 2
 Filter application/vnd.cups-raster 1 rastertocapt
-*Manufacturer "Canon Inc"
+*Manufacturer "Canon"
 Version 0.1.4
 {
 	Font *
@@ -25,9 +25,8 @@ Version 0.1.4
         *Choice False/Disabled "<</cupsInteger0 0>>setpagedevice"
         Choice True/Enabled    "<</cupsInteger0 1>>setpagedevice"
 
-	Option "captManualDuplex/Manual Duplex" Boolean AnySetup 10
-	*Choice False/Disabled	"<</cupsInteger2 0>>setpagedevice"
-	Choice True/Enabled	"<</cupsInteger2 1>>setpagedevice"
+	ManualCopies yes
+
 
 	{
 		*Resolution k 1 70 592 0 "600dpi/600 DPI"
@@ -39,14 +38,6 @@ Version 0.1.4
 		*Choice 7/Normal "<</cupsInteger1   7>>setpagedevice"
 		Choice 11/Dark "<</cupsInteger1  11>>setpagedevice"
 		Choice "15/Extra Dark" "<</cupsInteger1  15>>setpagedevice"
-
-		/* LBP 2900/3000, with multi-page size and type support */
-		MediaType 0 "Plain/Plain Paper"
-		MediaType 1 "Heavy/Heavy Paper"
-		MediaType 2 "PlainL/Plain Paper L"
-		MediaType 3 "HeavyH/Heavy Paper H"
-		MediaType 4 "Transparency"
-		MediaType 5 "Envelope"
 
 		MinSize 76.2mm 127.0mm
 		MaxSize 215.9mm 355.6mm		// US Legal
@@ -142,10 +133,33 @@ Version 0.1.4
 		MediaSize EnvPRC7
 		MediaSize EnvPRC8
 		MediaSize EnvYou4
+		{
+			/* LBP 2900/3000, with multi-page size and type support */
+			MediaType 128 "Plain/Plain Paper"
+			MediaType 1 "Heavy/Heavy Paper"
+			MediaType 2 "PlainL/Plain Paper L"
+			MediaType 3 "HeavyH/Heavy Paper H"
+			MediaType 4 "Transparency"
+			MediaType 5 "Envelope"
 
-		*ModelName "LBP2900/LBP3000 r2c"
-		FileName "CanonLBP-2900-3000.ppd"
-		PCFileName "CNLB2K9.ppd"
+			ModelName "LBP2900/LBP3000 r2c"
+			FileName "CanonLBP-2900-3000.ppd"
+			PCFileName "CNLB2K9.ppd"
+		}
+		{
+			/* LBP 6000, with multi-page size and type support */
+			MediaType 0 "Plain/Plain Paper"
+			MediaType 1 "Heavy/Heavy Paper"
+			MediaType 2 "PlainL/Plain Paper L"
+			MediaType 3 "HeavyH/Heavy Paper H"
+			MediaType 4 "Transparency"
+			MediaType 5 "Envelope"
+
+			Resolution k 1 70 592 0 "600x400dpi/600x400 DPI"
+			ModelName "LBP6000 r2c"
+			FileName "CanonLBP-6000.ppd"
+			PCFileName "CNLB2K92.ppd"
+		}
 	}
 
 	{
